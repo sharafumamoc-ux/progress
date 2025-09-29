@@ -123,16 +123,28 @@
             </div>
 
             <!-- Manual Student Addition -->
-            <div class="p-4 mt-6 border border-gray-200 bg-gray-50 rounded-lg grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+            <div class="p-4 mt-6 border border-gray-200 bg-gray-50 rounded-lg grid grid-cols-1 sm:grid-cols-4 lg:grid-cols-5 gap-4 items-end">
+                
                 <div class="col-span-1">
                     <label for="new-student-id" class="text-sm font-medium text-gray-700 block mb-1">New Student ID</label>
                     <input type="text" id="new-student-id" placeholder="e.g., S011" class="table-input !w-full !text-left !py-2 !px-3" />
                 </div>
-                 <div class="col-span-2">
+                 <div class="col-span-2 lg:col-span-1">
                     <label for="new-student-name" class="text-sm font-medium text-gray-700 block mb-1">New Student Name</label>
                     <input type="text" id="new-student-name" placeholder="e.g., Sarah Johnson" class="table-input !w-full !text-left !py-2 !px-3" />
                 </div>
-                <button id="add-student-btn-manual" class="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg transition duration-150 shadow-md col-span-1">
+                
+                <div class="col-span-1 lg:col-span-1">
+                    <label for="new-student-stream" class="text-sm font-medium text-gray-700 block mb-1">Stream</label>
+                    <select id="new-student-stream" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                        <option value="General Stream">General Stream</option>
+                        <option value="Biology Science">Biology Science</option>
+                        <option value="Computer Science">Computer Science</option>
+                        <option value="Commerce">Commerce</option>
+                    </select>
+                </div>
+
+                <button id="add-student-btn-manual" class="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg transition duration-150 shadow-md col-span-1 lg:col-span-2">
                     + Add New Student
                 </button>
             </div>
@@ -189,7 +201,7 @@
                         <div class="border-b pb-4 mb-4">
                             <div class="flex items-center justify-between mb-2">
                                 <div class="flex items-center space-x-3">
-                                    <img src="image_0e42ef.png" alt="Ifer Logo" class="h-8 w-8 object-contain rounded-md">
+                                    <img src="image_0e42ef.jpg" alt="Ifer Logo" class="h-8 w-8 object-contain rounded-md">
                                     <h3 class="text-lg font-bold text-gray-900" id="report-institution-name">Ifer Institute of Education</h3>
                                 </div>
                                 <p class="text-sm font-medium text-gray-600" id="report-exam-name"></p>
@@ -205,6 +217,7 @@
                                 <div>
                                     <h2 id="report-student-name" class="text-2xl font-bold text-indigo-600"></h2>
                                     <p id="report-student-id" class="text-sm text-gray-500"></p>
+                                    <p id="report-student-stream" class="text-sm font-medium text-gray-700 mt-1"></p>
                                 </div>
                             </div>
                              <!-- Rank -->
@@ -285,6 +298,9 @@
 
         let selectedStudentId = null;
         let progressChart = null;
+        
+        // Default stream if none is provided in upload
+        const DEFAULT_STREAM = "General Stream"; 
 
         const tableBody = document.getElementById('students-table-body');
         const tableHeadersRow = document.getElementById('table-headers');
@@ -302,6 +318,7 @@
         // New manual student input fields
         const newStudentIdInput = document.getElementById('new-student-id');
         const newStudentNameInput = document.getElementById('new-student-name');
+        const newStudentStreamInput = document.getElementById('new-student-stream');
         const addStudentManuallyBtn = document.getElementById('add-student-btn-manual');
         const downloadReportBtn = document.getElementById('download-report-btn');
         const printIndividualReportBtn = document.getElementById('print-individual-report-btn');
@@ -346,7 +363,7 @@
             addSubjectBtn.addEventListener('click', addSubject);
         }
 
-        // --- NEW EXCEL HANDLING FUNCTIONS (Flexible Format Detection) ---
+        // --- EXCEL HANDLING FUNCTIONS (Flexible Format Detection) ---
 
         const processWorkbook = (workbook) => {
             const sheetName = workbook.SheetNames[0];
@@ -364,9 +381,11 @@
 
             const ID_KEYWORDS = ['id', 'student id', 'roll no', 'reg no', 'student_id'];
             const NAME_KEYWORDS = ['name', 'full name', 'student name', 'candidate name', 'student_name'];
+            const STREAM_KEYWORDS = ['stream', 'course', 'discipline'];
 
             let idIndex = -1;
             let nameIndex = -1;
+            let streamIndex = -1; // New stream index
 
             headers.forEach((header, index) => {
                 const normalizedHeader = header.replace(/[^a-z0-9]/g, '');
@@ -376,6 +395,9 @@
                 }
                 if (nameIndex === -1 && NAME_KEYWORDS.some(keyword => normalizedHeader.includes(keyword.replace(/ /g, '')))) {
                     nameIndex = index;
+                }
+                if (streamIndex === -1 && STREAM_KEYWORDS.some(keyword => normalizedHeader.includes(keyword.replace(/ /g, '')))) {
+                    streamIndex = index;
                 }
             });
 
@@ -393,7 +415,7 @@
             const subjectIndices = [];
             
             headers.forEach((header, index) => {
-                if (index !== idIndex && index !== nameIndex) {
+                if (index !== idIndex && index !== nameIndex && index !== streamIndex) { // Exclude stream column
                     const name = rawHeaders[index];
                     const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
                     if (key) {
@@ -413,9 +435,12 @@
                 const row = jsonSheet[i];
                 if (!row || !row[idIndex] || !row[nameIndex]) continue;
 
+                const streamValue = streamIndex !== -1 && row[streamIndex] ? String(row[streamIndex]).trim() : DEFAULT_STREAM;
+
                 const student = {
                     id: String(row[idIndex]).trim(),
                     name: String(row[nameIndex]).trim(),
+                    stream: streamValue, // New stream field
                     marks: {},
                     photoBase64: null 
                 };
@@ -464,7 +489,7 @@
             reader.readAsArrayBuffer(file);
         };
 
-        // --- NEW DOWNLOAD REPORT FUNCTION (EXCEL) ---
+        // --- DOWNLOAD REPORT FUNCTION (EXCEL) ---
 
         const downloadReport = () => {
             const studentsWithMetrics = calculateAllMetrics();
@@ -478,7 +503,7 @@
             const subjectHeaders = subjectsConfig.flatMap(sub => [sub.name + ' (Mark)', sub.name + ' (Grade)']);
 
             const headerRow = [
-                'Rank', 'ID', 'Name', 'Total Marks', 'Max Total', 'Percentage', 'Overall Grade', ...subjectHeaders
+                'Rank', 'ID', 'Name', 'Stream', 'Total Marks', 'Max Total', 'Percentage', 'Overall Grade', ...subjectHeaders
             ];
             
             const dataToExport = [headerRow];
@@ -495,6 +520,7 @@
                     student.rank,
                     student.id,
                     student.name,
+                    student.stream, // Include stream
                     student.total,
                     student.maxTotal,
                     (student.percentage * 100).toFixed(2) + '%',
@@ -512,7 +538,7 @@
             XLSX.writeFile(wb, `${examName}_Full_Class_Data_${new Date().toISOString().slice(0, 10)}.xlsx`);
         };
         
-        // --- NEW PRINT/PDF FUNCTION (INDIVIDUAL REPORT) ---
+        // --- PRINT/PDF FUNCTION (INDIVIDUAL REPORT) ---
         
         const printIndividualReport = (studentId) => {
             if (!studentId) {
@@ -534,22 +560,19 @@
                 </div>
             `;
             
-            // Hide the print button in the temporary print content
             const tempPrintBtn = document.getElementById('print-individual-report-btn');
             if (tempPrintBtn) {
                  tempPrintBtn.style.display = 'none';
             }
 
-            // Print and restore
             window.print();
             
             document.body.innerHTML = originalContents;
             document.title = originalTitle;
             
-            // Restore listeners and state
             initializeListeners();
             refreshAll(); 
-            handleRowSelect(studentId); // Re-select the student
+            handleRowSelect(studentId);
         };
 
 
@@ -599,6 +622,7 @@
         const addStudentManually = () => {
             const id = newStudentIdInput.value.trim();
             const name = newStudentNameInput.value.trim();
+            const stream = newStudentStreamInput.value;
 
             if (!id || !name) {
                 alert('Please enter both Student ID and Student Name.');
@@ -618,6 +642,7 @@
             const newStudent = {
                 id: id,
                 name: name,
+                stream: stream, // New stream field
                 marks: newMarks,
                 photoBase64: null
             };
@@ -626,13 +651,14 @@
 
             newStudentIdInput.value = '';
             newStudentNameInput.value = '';
+            // Don't clear stream input
 
             refreshAll();
             handleRowSelect(id);
         };
 
 
-        // --- EXISTING CORE FUNCTIONS ---
+        // --- CORE CALCULATIONS AND RENDERING ---
 
         const updateExamDisplay = () => {
             const examName = examNameInput.value.trim() || 'Exam Results';
@@ -689,6 +715,7 @@
         const calculateRanks = (studentsWithMetrics) => {
             const percentages = studentsWithMetrics.map(s => s.percentage);
             return studentsWithMetrics.map(student => {
+                // Rank is calculated based on overall percentage across the entire class (all streams)
                 const rank = percentages.filter(p => p > student.percentage).length + 1;
                 return { ...student, rank };
             });
@@ -750,6 +777,7 @@
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rank</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ID</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Name</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Stream</th>
             `;
             subjectsConfig.forEach(sub => {
                 tableHeadersRow.innerHTML += `
@@ -772,7 +800,8 @@
 
             tableBody.innerHTML = '';
             if (rankedStudents.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="${4 + (subjectsConfig.length * 2) + 2}" class="text-center py-6 text-gray-500">No student data available. Please upload an Excel sheet or manually add subjects/marks.</td></tr>`;
+                // Adjust colspan to account for the new 'Stream' column
+                tableBody.innerHTML = `<tr><td colspan="${5 + (subjectsConfig.length * 2) + 2}" class="text-center py-6 text-gray-500">No student data available. Please upload an Excel sheet or manually add students.</td></tr>`;
                 return;
             }
 
@@ -805,6 +834,7 @@
                     <td class="px-4 py-3 whitespace-nowrap"><span class="font-semibold text-lg">${student.rank}</span></td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${student.id}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${student.name}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">${student.stream || DEFAULT_STREAM}</td>
                     ${subjectCells}
                     <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-800 text-center border-l border-gray-300">${student.total}/${student.maxTotal}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-800 text-center">${(student.percentage * 100).toFixed(2)}%</td>
@@ -874,6 +904,7 @@
 
             document.getElementById('report-student-name').textContent = student.name;
             document.getElementById('report-student-id').textContent = `ID: ${student.id}`;
+            document.getElementById('report-student-stream').textContent = `Stream: ${student.stream || DEFAULT_STREAM}`; // Display stream
             document.getElementById('report-rank').textContent = `#${student.rank}`;
             document.getElementById('report-total').textContent = `${student.total}/${student.maxTotal}`;
             document.getElementById('report-percentage').textContent = `${(student.percentage * 100).toFixed(2)}%`;
