@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Student Gradebook</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS for reading Excel files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 40vh;
+            max-height: 400px;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        .table-input {
+            width: 60px;
+            padding: 4px 8px;
+            border-radius: 0.375rem;
+            border: 1px solid #D1D5DB;
+            text-align: center;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .table-input:focus {
+            outline: none;
+            border-color: #4F46E5;
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.3);
+        }
+        .table-row-selected {
+            background-color: #EEF2FF;
+        }
+        .student-photo-preview {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid #E0E7FF;
+        }
+        .default-photo-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #F3F4F6;
+            color: #D1D5DB;
+            font-size: 50px;
+        }
+    </style>
+    <!-- Chosen Palette: Warm Neutrals with Indigo Accent -->
+    <!-- Application Structure Plan: A two-column dashboard layout remains the core structure. A new 'Header/Branding' section is added at the top for Institution details and the Exam Name. The left column features the dynamic, editable table, which now includes subject grades. The right column displays the detailed progress report and radar chart for a selected student. A new 'Photo Manager' block is added to the configuration area to handle student image uploads. The 'Subject Configuration & Data Management' section is expanded to include a manual 'Add Student' form and now allows dynamic subject removal via buttons. This structure is chosen to centralize configuration (top), provide a comprehensive overview (left), and offer deep-dive analysis (right), making the tool highly interactive and reflective of the source report's core calculation needs. -->
+    <!-- Visualization & Content Choices: 
+        1. Branding Header: Report Info -> Institution Name, Logo, Exam Name. Goal -> Professional presentation & context. Viz/Method -> Fixed header block with responsive image (logo) and input field (Exam Name). Interaction -> Typing in the exam name updates the report headers instantly via JS. Justification -> Provides essential report context and branding as requested.
+        2. Photo Manager: Report Info -> Student Photos. Goal -> Personalization of reports. Viz/Method -> Dropdown and File Input. Interaction -> Uploads are converted to Base64 and stored, then displayed on the report card. Justification -> Addresses the user request for optional student photos.
+        3. Subject Configuration: Report Info -> Subject names and Max Marks (now dynamic), now supports Excel upload, manual student entry, and dynamic removal. Goal -> Allow user configuration and bulk/manual data entry. Viz/Method -> Dynamic HTML form inputs and File Input/Buttons. Interaction -> Removal buttons instantly update subjects and data. Justification -> Addresses the user request for manual student addition and subject removal.
+        4. Class Data: Report Info -> All student marks, subject grades, and overall stats. Goal -> Organize, Compare. Viz/Method -> Interactive HTML Table with number inputs and dynamic columns. Interaction -> Editing marks or configuration triggers recalculation, re-ranking, and dynamic grade color-coding (A+/F colors). Justification -> Simulates the core dynamic spreadsheet functionality with enhanced visual feedback.
+        5. Individual Performance: Report Info -> Single student's metrics. Goal -> Inform, Analyze. Viz/Method -> Styled card and Chart.js Radar Chart. Interaction -> Updates on student selection. Justification -> Radar chart dynamically shows performance across all configured subjects.
+        6. Download Options: Goal -> Export data for specified student (PDF) and whole class (Excel). Viz/Method -> Dedicated buttons calling JS functions. Interaction -> Triggers Excel download or Print dialogue. Justification -> Addresses user request for export functionality in multiple formats.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <!-- INSTITUTION AND EXAM HEADER -->
+        <header class="bg-white p-6 rounded-lg shadow-md mb-8 flex flex-col md:flex-row items-center justify-between">
+            <div class="flex items-center space-x-4 mb-4 md:mb-0">
+                <img src="image_0e42ef.jpg" alt="Ifer Logo" class="h-12 w-12 object-contain rounded-lg">
+                <div class="text-left">
+                    <h1 id="institution-name" class="text-xl sm:text-2xl font-bold text-gray-900">Ifer Institute of Education</h1>
+                    <p id="institution-tagline" class="text-sm text-gray-600">Better Education, Better Society</p>
+                </div>
+            </div>
+            <div class="text-center md:text-right w-full md:w-auto">
+                <p class="text-sm font-medium text-gray-500 mb-1">Examination Name</p>
+                <input type="text" id="exam-name-input" placeholder="e.g., Final Term Exam 2024" value="First Mid-Term Examination" class="table-input !w-full md:!w-64 !text-center !py-2 !px-3 text-base font-semibold" />
+            </div>
+        </header>
+
+        <header class="text-center mb-10">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">Dynamic Student Mark Sheet</h1>
+            <p id="main-exam-display" class="mt-2 text-lg text-indigo-600 font-semibold"></p>
+        </header>
+
+        <section id="subject-management" class="mb-8 bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-800">Subject Configuration & Data Management</h2>
+            <p class="text-gray-600 mb-4">You can manually define subjects below or **upload an Excel file** to load all student marks automatically.</p>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Excel Upload Option -->
+                <div class="p-4 border border-indigo-200 bg-indigo-50 rounded-lg col-span-1 lg:col-span-2">
+                    <label for="excel-upload" class="font-semibold text-indigo-700 block mb-2">Upload Mark Sheet (Excel)</label>
+                    <input type="file" id="excel-upload" accept=".xlsx, .xls" class="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-full file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-indigo-200 file:text-indigo-800
+                        hover:file:bg-indigo-300
+                    "/>
+                    <p class="text-xs text-indigo-700 mt-2">**Flexible Format:** Automatically detects common column headers like 'ID', 'Roll No', 'Name', 'Student Name', etc.</p>
+                </div>
+
+                <!-- Student Photo Upload Option -->
+                <div class="p-4 border border-gray-200 bg-gray-50 rounded-lg">
+                    <label class="font-semibold text-gray-700 block mb-2">Student Photo Manager</label>
+                    <select id="photo-student-select" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm mb-3">
+                        <option value="">-- Select Student --</option>
+                    </select>
+                    <input type="file" id="photo-upload-input" accept="image/jpeg, image/png" class="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-1 file:px-3
+                        file:rounded-full file:border-0
+                        file:text-xs file:font-semibold
+                        file:bg-gray-200 file:text-gray-700
+                        hover:file:bg-gray-300
+                    "/>
+                </div>
+            </div>
+
+            <!-- Manual Student Addition -->
+            <div class="p-4 mt-6 border border-gray-200 bg-gray-50 rounded-lg grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+                <div class="col-span-1">
+                    <label for="new-student-id" class="text-sm font-medium text-gray-700 block mb-1">New Student ID</label>
+                    <input type="text" id="new-student-id" placeholder="e.g., S011" class="table-input !w-full !text-left !py-2 !px-3" />
+                </div>
+                 <div class="col-span-2">
+                    <label for="new-student-name" class="text-sm font-medium text-gray-700 block mb-1">New Student Name</label>
+                    <input type="text" id="new-student-name" placeholder="e.g., Sarah Johnson" class="table-input !w-full !text-left !py-2 !px-3" />
+                </div>
+                <button id="add-student-btn-manual" class="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg transition duration-150 shadow-md col-span-1">
+                    + Add New Student
+                </button>
+            </div>
+
+
+            <h3 class="text-xl font-semibold mb-3 text-gray-800 pt-4 border-t border-gray-100 mt-6">Max Marks & Subject Editor</h3>
+            
+            <div id="subject-config-inputs" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <!-- Subject Max Mark Inputs will be rendered here -->
+            </div>
+            
+            <div class="flex flex-col sm:flex-row items-center gap-4 pt-4 border-t border-gray-100">
+                <input type="text" id="new-subject-name" placeholder="New Subject Name (e.g., History)" class="table-input w-full sm:w-64 !text-left !w-auto !py-2 !px-3" />
+                <button id="add-subject-btn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg transition duration-150 shadow-md">
+                    + Add Subject
+                </button>
+            </div>
+        </section>
+
+        <main class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+            
+            <section id="class-data-section">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-semibold text-gray-800">Class Performance Overview</h2>
+                        <button id="download-report-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition duration-150 shadow-md text-sm">
+                            ⬇️ Download Class Data (Excel)
+                        </button>
+                    </div>
+                    <p class="text-gray-600 mb-4">Click on a student to view their detailed report. Edit marks directly in the table to see ranks update in real-time. Subject grades are color-coded.</p>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-100">
+                                <tr id="table-headers">
+                                    <!-- Dynamic headers will be inserted here by JavaScript -->
+                                </tr>
+                            </thead>
+                            <tbody id="students-table-body" class="bg-white divide-y divide-gray-200">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section id="progress-report-section">
+                <div id="report-card-container" class="bg-white p-6 rounded-lg shadow-md sticky top-8">
+                    <div id="report-placeholder">
+                        <h2 class="text-2xl font-semibold text-gray-800">Student Progress Report</h2>
+                        <p class="text-gray-600 mt-4">Select a student from the table or upload an Excel file to view data.</p>
+                    </div>
+                    <div id="report-content" class="hidden">
+                        
+                        <!-- REPORT HEADER WITH INSTITUTION/EXAM DETAILS -->
+                        <div class="border-b pb-4 mb-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center space-x-3">
+                                    <img src="image_0e42ef.png" alt="Ifer Logo" class="h-8 w-8 object-contain rounded-md">
+                                    <h3 class="text-lg font-bold text-gray-900" id="report-institution-name">Ifer Institute of Education</h3>
+                                </div>
+                                <p class="text-sm font-medium text-gray-600" id="report-exam-name"></p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex flex-col sm:flex-row justify-between items-start border-b pb-4 mb-4">
+                            <!-- Student Photo and Details -->
+                            <div class="flex items-center space-x-4 mb-4 sm:mb-0">
+                                <div class="student-photo-preview flex-shrink-0" id="report-photo-container">
+                                    <!-- Photo or default icon goes here -->
+                                </div>
+                                <div>
+                                    <h2 id="report-student-name" class="text-2xl font-bold text-indigo-600"></h2>
+                                    <p id="report-student-id" class="text-sm text-gray-500"></p>
+                                </div>
+                            </div>
+                             <!-- Rank -->
+                             <div class="text-right self-center sm:self-auto">
+                                <p class="text-lg font-semibold text-gray-600">Class Rank</p>
+                                <p id="report-rank" class="text-3xl font-bold text-gray-900"></p>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                            <div class="bg-gray-100 p-4 rounded-lg">
+                                <p class="text-sm font-medium text-gray-500">Total Marks</p>
+                                <p id="report-total" class="text-2xl font-semibold text-gray-900"></p>
+                            </div>
+                             <div class="bg-gray-100 p-4 rounded-lg">
+                                <p class="text-sm font-medium text-gray-500">Percentage</p>
+                                <p id="report-percentage" class="text-2xl font-semibold text-gray-900"></p>
+                            </div>
+                             <div class="bg-gray-100 p-4 rounded-lg">
+                                <p class="text-sm font-medium text-gray-500">Overall Grade</p>
+                                <p id="report-grade" class="text-2xl font-semibold text-gray-900"></p>
+                            </div>
+                        </div>
+
+                        <div class="mt-8">
+                             <h3 class="text-lg font-semibold text-gray-800 mb-2">Subject Performance Radar</h3>
+                             <div class="chart-container">
+                                <canvas id="progress-chart"></canvas>
+                             </div>
+                        </div>
+
+                        <!-- NEW PRINT BUTTON FOR INDIVIDUAL REPORT -->
+                        <button id="print-individual-report-btn" class="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-150 shadow-md">
+                            🖨️ Print/Save as PDF Report
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="mt-12 pt-8 border-t border-gray-200">
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">Calculation Logic & Detailed Grading Scale</h3>
+                <p class="text-gray-600 mb-4">The grades and ranks are calculated automatically based on the subject's maximum marks and the detailed grading scale below. **Badges are colored to highlight only A+ (Green) and F (Red) grades.**</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h4 class="font-semibold text-gray-700">Detailed Grading Scale</h4>
+                        <ul class="list-disc list-inside mt-2 text-gray-600 space-y-1">
+                            <li><span class="font-medium text-green-700">A+</span>: 90% and above (Badge: Green)</li>
+                            <li><span class="font-medium text-indigo-700">A</span>: 80% to 89.99% (Badge: Indigo)</li>
+                            <li><span class="font-medium text-indigo-700">B+</span>: 70% to 79.99% (Badge: Indigo)</li>
+                            <li><span class="font-medium text-indigo-700">B</span>: 60% to 69.99% (Badge: Indigo)</li>
+                            <li><span class="font-medium text-indigo-700">C+</span>: 50% to 59.99% (Badge: Indigo)</li>
+                            <li><span class="font-medium text-indigo-700">C</span>: 40% to 49.99% (Badge: Indigo)</li>
+                            <li><span class="font-medium text-indigo-700">D+</span>: 30% to 39.99% (Badge: Indigo)</li>
+                            <li><span class="font-medium text-red-600">F</span>: Below 30% (Badge: Red)</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-gray-700">Ranking Method</h4>
+                        <p class="mt-2 text-gray-600">The class rank is determined using the `RANK.EQ` logic based on the overall percentage, where the student with the highest percentage receives Rank 1. Ties share the same rank.</p>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Initial default data
+        let subjectsConfig = [
+            { key: 'physics', name: 'Physics', maxMarks: 100 },
+            { key: 'chemistry', name: 'Chemistry', maxMarks: 100 },
+            { key: 'biology', name: 'Biology', maxMarks: 100 }
+        ];
+
+        // The list is empty, ready for Excel upload or manual addition.
+        let studentsData = [];
+
+        let selectedStudentId = null;
+        let progressChart = null;
+
+        const tableBody = document.getElementById('students-table-body');
+        const tableHeadersRow = document.getElementById('table-headers');
+        const reportPlaceholder = document.getElementById('report-placeholder');
+        const reportContent = document.getElementById('report-content');
+        const subjectConfigInputs = document.getElementById('subject-config-inputs');
+        const addSubjectBtn = document.getElementById('add-subject-btn');
+        const newSubjectNameInput = document.getElementById('new-subject-name');
+        const examNameInput = document.getElementById('exam-name-input');
+        const mainExamDisplay = document.getElementById('main-exam-display');
+        const reportExamName = document.getElementById('report-exam-name');
+        const excelUploadInput = document.getElementById('excel-upload');
+        const photoUploadInput = document.getElementById('photo-upload-input');
+        const photoStudentSelect = document.getElementById('photo-student-select');
+        // New manual student input fields
+        const newStudentIdInput = document.getElementById('new-student-id');
+        const newStudentNameInput = document.getElementById('new-student-name');
+        const addStudentManuallyBtn = document.getElementById('add-student-btn-manual');
+        const downloadReportBtn = document.getElementById('download-report-btn');
+        const printIndividualReportBtn = document.getElementById('print-individual-report-btn');
+
+
+        // --- UTILITY AND SETUP FUNCTIONS ---
+        
+        const initializeListeners = () => {
+             // Re-attach listeners after DOM restoration
+            excelUploadInput.addEventListener('change', handleFileUpload); 
+            photoUploadInput.addEventListener('change', handlePhotoUpload);
+            addStudentManuallyBtn.addEventListener('click', addStudentManually);
+            examNameInput.addEventListener('input', updateExamDisplay);
+            downloadReportBtn.addEventListener('click', downloadReport);
+            if (printIndividualReportBtn) {
+                 printIndividualReportBtn.addEventListener('click', () => printIndividualReport(selectedStudentId));
+            }
+
+            tableBody.addEventListener('change', (e) => {
+                if(e.target.classList.contains('table-input') && e.target.dataset.subject) {
+                    const studentId = e.target.closest('tr').dataset.studentId;
+                    const subject = e.target.dataset.subject;
+                    handleMarkChange(studentId, subject, e.target.value);
+                }
+            });
+
+            subjectConfigInputs.addEventListener('change', (e) => {
+                if(e.target.tagName === 'INPUT' && e.target.dataset.key) {
+                    handleMaxMarkChange(e.target.dataset.key, e.target.value);
+                }
+            });
+            
+            subjectConfigInputs.addEventListener('click', (e) => {
+                const button = e.target.closest('[data-action="remove-subject"]');
+                if (button) {
+                    const key = button.dataset.key;
+                    removeSubject(key);
+                }
+            });
+
+
+            addSubjectBtn.addEventListener('click', addSubject);
+        }
+
+        // --- NEW EXCEL HANDLING FUNCTIONS (Flexible Format Detection) ---
+
+        const processWorkbook = (workbook) => {
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            
+            const jsonSheet = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            if (jsonSheet.length < 2) {
+                console.error('Excel sheet must contain header and at least one row of data.');
+                return false;
+            }
+
+            const rawHeaders = jsonSheet[0];
+            const headers = rawHeaders.map(h => String(h || '').trim().toLowerCase());
+
+            const ID_KEYWORDS = ['id', 'student id', 'roll no', 'reg no', 'student_id'];
+            const NAME_KEYWORDS = ['name', 'full name', 'student name', 'candidate name', 'student_name'];
+
+            let idIndex = -1;
+            let nameIndex = -1;
+
+            headers.forEach((header, index) => {
+                const normalizedHeader = header.replace(/[^a-z0-9]/g, '');
+                
+                if (idIndex === -1 && ID_KEYWORDS.some(keyword => normalizedHeader.includes(keyword.replace(/ /g, '')))) {
+                    idIndex = index;
+                }
+                if (nameIndex === -1 && NAME_KEYWORDS.some(keyword => normalizedHeader.includes(keyword.replace(/ /g, '')))) {
+                    nameIndex = index;
+                }
+            });
+
+            if (idIndex === -1 || nameIndex === -1) {
+                alert('Error: Could not automatically detect "ID" and "Name" columns. Please ensure your sheet includes clear headers like "ID", "Student Name", "Roll No", etc.');
+                return false;
+            }
+
+            if (idIndex === nameIndex) {
+                 alert('Error: ID and Name columns were detected as the same column.');
+                 return false;
+            }
+            
+            subjectsConfig = [];
+            const subjectIndices = [];
+            
+            headers.forEach((header, index) => {
+                if (index !== idIndex && index !== nameIndex) {
+                    const name = rawHeaders[index];
+                    const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (key) {
+                        subjectsConfig.push({ key, name, maxMarks: 100 });
+                        subjectIndices.push(index);
+                    }
+                }
+            });
+            
+            if (subjectsConfig.length === 0) {
+                 alert('Error: No subject columns found. Please ensure you have at least one subject column after ID and Name.');
+                 return false;
+            }
+
+            studentsData = [];
+            for (let i = 1; i < jsonSheet.length; i++) {
+                const row = jsonSheet[i];
+                if (!row || !row[idIndex] || !row[nameIndex]) continue;
+
+                const student = {
+                    id: String(row[idIndex]).trim(),
+                    name: String(row[nameIndex]).trim(),
+                    marks: {},
+                    photoBase64: null 
+                };
+
+                subjectIndices.forEach((colIndex, subIndex) => {
+                    const subjectKey = subjectsConfig[subIndex]?.key;
+                    if (subjectKey) {
+                        const mark = Number(row[colIndex]);
+                        student.marks[subjectKey] = isNaN(mark) ? 0 : mark; 
+                    }
+                });
+
+                studentsData.push(student);
+            }
+
+            if (studentsData.length === 0) {
+                 alert('Error: No valid student data rows found after headers.');
+                 return false;
+            }
+            
+            selectedStudentId = null;
+            return true;
+        };
+
+        const handleFileUpload = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' }); 
+                    
+                    if (processWorkbook(workbook)) {
+                        refreshAll();
+                        event.target.value = '';
+                    }
+                } catch (error) {
+                    console.error('File parsing error:', error);
+                    alert('Error reading the file. Please ensure it is a valid Excel file (.xlsx or .xls).');
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
+        };
+
+        // --- NEW DOWNLOAD REPORT FUNCTION (EXCEL) ---
+
+        const downloadReport = () => {
+            const studentsWithMetrics = calculateAllMetrics();
+            const rankedStudents = calculateRanks(studentsWithMetrics);
+            
+            if (rankedStudents.length === 0) {
+                alert('No data available to download. Please add students first.');
+                return;
+            }
+
+            const subjectHeaders = subjectsConfig.flatMap(sub => [sub.name + ' (Mark)', sub.name + ' (Grade)']);
+
+            const headerRow = [
+                'Rank', 'ID', 'Name', 'Total Marks', 'Max Total', 'Percentage', 'Overall Grade', ...subjectHeaders
+            ];
+            
+            const dataToExport = [headerRow];
+
+            rankedStudents.sort((a, b) => a.rank - b.rank);
+
+            rankedStudents.forEach(student => {
+                const subjectData = subjectsConfig.flatMap(sub => {
+                    const metrics = student.subjectMetrics[sub.key];
+                    return [metrics.mark, metrics.grade];
+                });
+                
+                const row = [
+                    student.rank,
+                    student.id,
+                    student.name,
+                    student.total,
+                    student.maxTotal,
+                    (student.percentage * 100).toFixed(2) + '%',
+                    student.grade,
+                    ...subjectData
+                ];
+                dataToExport.push(row);
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet(dataToExport);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Class Report");
+            
+            const examName = examNameInput.value.trim().replace(/[^a-z0-9]/gi, '_') || 'Gradebook_Report';
+            XLSX.writeFile(wb, `${examName}_Full_Class_Data_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        };
+        
+        // --- NEW PRINT/PDF FUNCTION (INDIVIDUAL REPORT) ---
+        
+        const printIndividualReport = (studentId) => {
+            if (!studentId) {
+                alert("Please select a student from the table first to print their report.");
+                return;
+            }
+
+            const originalContents = document.body.innerHTML;
+            const reportContents = document.getElementById('report-card-container').outerHTML;
+            const originalTitle = document.title;
+            const student = studentsData.find(s => s.id === studentId);
+            
+            document.title = `${student.name}_${examNameInput.value.trim()}_Report`;
+
+            // Wrap the report content in a temporary body for printing
+            document.body.innerHTML = `
+                <div style="padding: 20px; max-width: 800px; margin: 0 auto;">
+                    ${reportContents}
+                </div>
+            `;
+            
+            // Hide the print button in the temporary print content
+            const tempPrintBtn = document.getElementById('print-individual-report-btn');
+            if (tempPrintBtn) {
+                 tempPrintBtn.style.display = 'none';
+            }
+
+            // Print and restore
+            window.print();
+            
+            document.body.innerHTML = originalContents;
+            document.title = originalTitle;
+            
+            // Restore listeners and state
+            initializeListeners();
+            refreshAll(); 
+            handleRowSelect(studentId); // Re-select the student
+        };
+
+
+        // --- PHOTO MANAGER FUNCTIONS ---
+
+        const renderPhotoManager = () => {
+            photoStudentSelect.innerHTML = '<option value="">-- Select Student --</option>';
+            studentsData.forEach(student => {
+                const option = document.createElement('option');
+                option.value = student.id;
+                option.textContent = `${student.name} (${student.id})`;
+                photoStudentSelect.appendChild(option);
+            });
+            photoUploadInput.value = '';
+        };
+
+        const handlePhotoUpload = (event) => {
+            const file = event.target.files[0];
+            const studentId = photoStudentSelect.value;
+
+            if (!file || !studentId) {
+                alert('Please select a student and a file first.');
+                return;
+            }
+            
+            if (!file.type.match('image/jpeg') && !file.type.match('image/png')) {
+                alert('Please select a JPG or PNG image file.');
+                event.target.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const student = studentsData.find(s => s.id === studentId);
+                if (student) {
+                    student.photoBase64 = e.target.result;
+                    if (selectedStudentId === studentId) {
+                        renderProgressReport(studentId);
+                    }
+                }
+            };
+            reader.readAsDataURL(file);
+        };
+        
+        // --- MANUAL STUDENT ADDITION ---
+
+        const addStudentManually = () => {
+            const id = newStudentIdInput.value.trim();
+            const name = newStudentNameInput.value.trim();
+
+            if (!id || !name) {
+                alert('Please enter both Student ID and Student Name.');
+                return;
+            }
+
+            if (studentsData.some(s => s.id === id)) {
+                alert(`Student ID "${id}" already exists. Please use a unique ID.`);
+                return;
+            }
+
+            const newMarks = {};
+            subjectsConfig.forEach(sub => {
+                newMarks[sub.key] = 0;
+            });
+
+            const newStudent = {
+                id: id,
+                name: name,
+                marks: newMarks,
+                photoBase64: null
+            };
+
+            studentsData.push(newStudent);
+
+            newStudentIdInput.value = '';
+            newStudentNameInput.value = '';
+
+            refreshAll();
+            handleRowSelect(id);
+        };
+
+
+        // --- EXISTING CORE FUNCTIONS ---
+
+        const updateExamDisplay = () => {
+            const examName = examNameInput.value.trim() || 'Exam Results';
+            mainExamDisplay.textContent = examName;
+            reportExamName.textContent = examName;
+        };
+
+        const getGrade = (percentage) => {
+            let grade, color;
+            if (percentage >= 0.90) { grade = 'A+'; color = 'green'; }
+            else if (percentage >= 0.80) { grade = 'A'; color = 'neutral'; }
+            else if (percentage >= 0.70) { grade = 'B+'; color = 'neutral'; }
+            else if (percentage >= 0.60) { grade = 'B'; color = 'neutral'; }
+            else if (percentage >= 0.50) { grade = 'C+'; color = 'neutral'; }
+            else if (percentage >= 0.40) { grade = 'C'; color = 'neutral'; }
+            else if (percentage >= 0.30) { grade = 'D+'; color = 'neutral'; }
+            else { grade = 'F'; color = 'red'; }
+            return { grade, color };
+        };
+
+        const getGradeColorClasses = (color) => {
+            if (color === 'green') return 'bg-green-100 text-green-800';
+            if (color === 'red') return 'bg-red-100 text-red-800';
+            if (color === 'neutral') return 'bg-indigo-100 text-indigo-800';
+            return 'bg-gray-100 text-gray-800';
+        };
+
+        const calculateMetrics = (student) => {
+            let total = 0;
+            let maxTotal = 0;
+            const subjectMetrics = {};
+
+            subjectsConfig.forEach(sub => {
+                const mark = student.marks[sub.key] || 0;
+                const percentage = sub.maxMarks > 0 ? mark / sub.maxMarks : 0;
+                const { grade, color } = getGrade(percentage);
+
+                subjectMetrics[sub.key] = { mark, percentage, grade, color, maxMarks: sub.maxMarks };
+
+                total += mark;
+                maxTotal += sub.maxMarks;
+            });
+
+            const overallPercentage = maxTotal > 0 ? total / maxTotal : 0;
+            const { grade: overallGrade, color: overallColor } = getGrade(overallPercentage);
+
+            return { ...student, total, maxTotal, percentage: overallPercentage, grade: overallGrade, color: overallColor, subjectMetrics };
+        };
+        
+        const calculateAllMetrics = () => {
+            return studentsData.map(calculateMetrics);
+        };
+
+        const calculateRanks = (studentsWithMetrics) => {
+            const percentages = studentsWithMetrics.map(s => s.percentage);
+            return studentsWithMetrics.map(student => {
+                const rank = percentages.filter(p => p > student.percentage).length + 1;
+                return { ...student, rank };
+            });
+        };
+
+        const renderSubjectConfig = () => {
+            subjectConfigInputs.innerHTML = '';
+            if (subjectsConfig.length === 0) {
+                 subjectConfigInputs.innerHTML = '<p class="text-gray-500 col-span-4">No subjects defined. Add one below or upload an Excel file.</p>';
+            }
+            subjectsConfig.forEach(sub => {
+                const div = document.createElement('div');
+                div.className = 'flex flex-col space-y-1 p-3 border border-gray-200 rounded-lg bg-white shadow-sm';
+                div.innerHTML = `
+                    <label class="text-sm font-bold text-gray-700 block mb-1">${sub.name}</label>
+                    <div class="flex items-center space-x-2">
+                        <input type="number" min="1" id="max-${sub.key}" class="table-input !w-full !text-left !py-2 !px-3" value="${sub.maxMarks}" data-key="${sub.key}">
+                        <button type="button" class="text-red-500 hover:text-red-700 transition-colors p-1" data-action="remove-subject" data-key="${sub.key}">
+                            <!-- Unicode Trash Icon -->
+                            <span class="text-xl leading-none">🗑️</span>
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500">Max Marks</p>
+                `;
+                subjectConfigInputs.appendChild(div);
+            });
+        };
+        
+        const removeSubject = (key) => {
+            subjectsConfig = subjectsConfig.filter(sub => sub.key !== key);
+
+            studentsData.forEach(student => {
+                if (student.marks[key] !== undefined) {
+                    delete student.marks[key];
+                }
+            });
+            
+            if (selectedStudentId && !studentsData.some(s => s.id === selectedStudentId)) {
+                selectedStudentId = null;
+            }
+
+            refreshAll();
+        };
+
+
+        const handleMaxMarkChange = (key, value) => {
+            let maxMark = parseInt(value, 10);
+            if (isNaN(maxMark) || maxMark < 1) maxMark = 100;
+
+            const subject = subjectsConfig.find(s => s.key === key);
+            if (subject) {
+                subject.maxMarks = maxMark;
+                refreshAll();
+            }
+        };
+
+        const renderTableHeaders = () => {
+            tableHeadersRow.innerHTML = `
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rank</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ID</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Name</th>
+            `;
+            subjectsConfig.forEach(sub => {
+                tableHeadersRow.innerHTML += `
+                    <th colspan="2" class="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-l border-gray-300">${sub.name} (Max ${sub.maxMarks})</th>
+                `;
+            });
+            tableHeadersRow.innerHTML += `
+                <th class="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider border-l border-gray-300">Total</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Percent</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Grade</th>
+            `;
+        };
+        
+        const renderTable = () => {
+            const studentsWithMetrics = calculateAllMetrics();
+            const rankedStudents = calculateRanks(studentsWithMetrics);
+            rankedStudents.sort((a, b) => a.rank - b.rank);
+            
+            renderTableHeaders();
+
+            tableBody.innerHTML = '';
+            if (rankedStudents.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="${4 + (subjectsConfig.length * 2) + 2}" class="text-center py-6 text-gray-500">No student data available. Please upload an Excel sheet or manually add subjects/marks.</td></tr>`;
+                return;
+            }
+
+            rankedStudents.forEach(student => {
+                const row = document.createElement('tr');
+                row.className = `cursor-pointer hover:bg-indigo-50 transition-colors ${student.id === selectedStudentId ? 'table-row-selected' : ''}`;
+                row.dataset.studentId = student.id;
+
+                let subjectCells = '';
+                subjectsConfig.forEach(sub => {
+                    const mark = student.marks[sub.key] !== undefined ? student.marks[sub.key] : 0; 
+                    const metrics = calculateMetrics({ ...student, marks: { ...student.marks, [sub.key]: mark } }).subjectMetrics[sub.key];
+                    
+                    const max = metrics.maxMarks;
+                    const gradeClasses = getGradeColorClasses(metrics.color);
+                    
+                    subjectCells += `
+                        <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500 text-center border-l border-gray-100">
+                            <input type="number" min="0" max="${max}" class="table-input" value="${mark}" data-subject="${sub.key}">
+                        </td>
+                        <td class="px-2 py-3 whitespace-nowrap text-center">
+                            <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${gradeClasses}">${metrics.grade}</span>
+                        </td>
+                    `;
+                });
+
+                const overallGradeClasses = getGradeColorClasses(student.color);
+
+                row.innerHTML = `
+                    <td class="px-4 py-3 whitespace-nowrap"><span class="font-semibold text-lg">${student.rank}</span></td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${student.id}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${student.name}</td>
+                    ${subjectCells}
+                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-800 text-center border-l border-gray-300">${student.total}/${student.maxTotal}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-800 text-center">${(student.percentage * 100).toFixed(2)}%</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-center">
+                        <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${overallGradeClasses}">${student.grade}</span>
+                    </td>
+                `;
+                
+                row.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('table-input')) {
+                       handleRowSelect(student.id);
+                    }
+                });
+                
+                tableBody.appendChild(row);
+            });
+        };
+
+        const handleRowSelect = (studentId) => {
+            selectedStudentId = studentId;
+            renderTable();
+            renderProgressReport(studentId);
+        }
+
+        const handleMarkChange = (studentId, subjectKey, value) => {
+            const student = studentsData.find(s => s.id === studentId);
+            const maxMark = subjectsConfig.find(s => s.key === subjectKey)?.maxMarks || 100;
+            
+            if (student) {
+                let mark = parseInt(value, 10);
+                if (isNaN(mark)) mark = 0;
+                if (mark < 0) mark = 0;
+                if (mark > maxMark) mark = maxMark;
+
+                student.marks[subjectKey] = mark;
+                
+                const inputElement = event.target;
+                inputElement.value = mark;
+
+                refreshAll();
+            }
+        };
+
+        const renderProgressReport = (studentId) => {
+            const studentsWithMetrics = calculateAllMetrics();
+            const rankedStudents = calculateRanks(studentsWithMetrics);
+            const student = rankedStudents.find(s => s.id === studentId);
+
+            const reportPhotoContainer = document.getElementById('report-photo-container');
+
+            if (!student) {
+                reportPlaceholder.classList.remove('hidden');
+                reportContent.classList.add('hidden');
+                return;
+            }
+
+            // --- Photo Display Logic ---
+            if (student.photoBase64) {
+                reportPhotoContainer.innerHTML = `<img src="${student.photoBase64}" alt="${student.name} Photo" class="student-photo-preview">`;
+            } else {
+                 // Unicode User Icon (Fallback)
+                reportPhotoContainer.innerHTML = `<div class="student-photo-preview default-photo-icon">👤</div>`; 
+            }
+
+            reportPlaceholder.classList.add('hidden');
+            reportContent.classList.remove('hidden');
+
+            document.getElementById('report-student-name').textContent = student.name;
+            document.getElementById('report-student-id').textContent = `ID: ${student.id}`;
+            document.getElementById('report-rank').textContent = `#${student.rank}`;
+            document.getElementById('report-total').textContent = `${student.total}/${student.maxTotal}`;
+            document.getElementById('report-percentage').textContent = `${(student.percentage * 100).toFixed(2)}%`;
+            document.getElementById('report-grade').textContent = student.grade;
+
+            const chartData = {
+                labels: subjectsConfig.map(sub => sub.name),
+                datasets: [{
+                    label: 'Marks',
+                    data: subjectsConfig.map(sub => student.subjectMetrics[sub.key]?.mark || 0),
+                    backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                    borderColor: 'rgba(79, 70, 229, 1)',
+                    pointBackgroundColor: 'rgba(79, 70, 229, 1)',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: 'rgba(79, 70, 229, 1)',
+                }]
+            };
+
+            const maxMarksArray = subjectsConfig.map(sub => sub.maxMarks);
+            const maxScore = maxMarksArray.length > 0 ? Math.max(...maxMarksArray) : 100;
+
+            const chartConfig = {
+                type: 'radar',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            angleLines: {
+                                display: true,
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            },
+                            suggestedMin: 0,
+                            suggestedMax: maxScore,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            },
+                            pointLabels: {
+                                font: {
+                                    size: 14,
+                                },
+                                color: '#374151'
+                            },
+                            ticks: {
+                                backdropColor: 'rgba(255, 255, 255, 0.75)',
+                                color: '#4B5563'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                           display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.label}: ${context.raw}/${maxMarksArray[context.dataIndex]}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            
+            if (progressChart) {
+                progressChart.data = chartData;
+                progressChart.options.scales.r.suggestedMax = maxScore;
+                progressChart.update();
+            } else {
+                const ctx = document.getElementById('progress-chart').getContext('2d');
+                progressChart = new Chart(ctx, chartConfig);
+            }
+        };
+
+        const addSubject = () => {
+            const name = newSubjectNameInput.value.trim();
+            if (!name) return;
+
+            const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (subjectsConfig.some(sub => sub.key === key)) {
+                newSubjectNameInput.value = '';
+                newSubjectNameInput.placeholder = 'Subject already exists!';
+                setTimeout(() => { newSubjectNameInput.placeholder = 'New Subject Name (e.g., History)'; }, 2000);
+                return;
+            }
+
+            subjectsConfig.push({ key, name, maxMarks: 100 });
+            studentsData.forEach(student => student.marks[key] = 0);
+            newSubjectNameInput.value = '';
+            
+            refreshAll();
+        };
+
+        const refreshAll = () => {
+            updateExamDisplay();
+            renderSubjectConfig();
+            renderTable();
+            renderPhotoManager();
+            if (selectedStudentId) {
+                renderProgressReport(selectedStudentId);
+            } else {
+                 reportPlaceholder.classList.remove('hidden');
+                 reportContent.classList.add('hidden');
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeListeners();
+            refreshAll();
+        });
+
+    </script>
+</body>
+</html>
