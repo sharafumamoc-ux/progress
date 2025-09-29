@@ -38,9 +38,11 @@
                 examName: 'Annual Examinations 2024',
             },
             subjects: [
-                { id: 'sub-math', name: 'Mathematics', maxMark: 100, isComposite: false, subSubjects: [] },
-                { id: 'sub-phy', name: 'Physics', maxMark: 70, isComposite: false, subSubjects: [] },
-                { id: 'sub-chem', name: 'Chemistry', maxMark: 70, isComposite: false, subSubjects: [] },
+                { id: 'sub-math', name: 'Mathematics', maxMark: 100, isComposite: false, streamFilter: null, subSubjects: [] },
+                { id: 'sub-phy', name: 'Physics', maxMark: 70, isComposite: false, streamFilter: 'Biology Science', subSubjects: [] },
+                { id: 'sub-chem', name: 'Chemistry', maxMark: 70, isComposite: false, streamFilter: 'Biology Science', subSubjects: [] },
+                { id: 'sub-cs', name: 'Computer Science Theory', maxMark: 70, isComposite: false, streamFilter: 'Computer Science', subSubjects: [] },
+                { id: 'sub-acc', name: 'Accountancy', maxMark: 100, isComposite: false, streamFilter: 'Commerce', subSubjects: [] },
             ],
             students: [],
             nextStudentId: 1,
@@ -56,6 +58,8 @@
             { threshold: 30, grade: 'D+', color: 'text-gray-900', bgColor: 'bg-gray-100' },
             { threshold: 0, grade: 'F', color: 'text-red-600', bgColor: 'bg-red-100' },
         ];
+        
+        const STREAMS = ['Computer Science', 'Biology Science', 'Commerce']; // Defined streams
 
         let appState = {
             data: INITIAL_DATA,
@@ -99,24 +103,40 @@
 
         /** Utility: Ranking and Calculation Logic */
         const rankAndCalculate = (students, subjects) => {
-            const totalMaxMark = subjects.reduce((sum, s) => sum + s.maxMark, 0);
-
+            
             const calculatedStudents = students.map(student => {
-                let studentTotalScore = 0;
                 
+                // 1. FILTER SUBJECTS relevant to the student's stream
+                const studentSubjects = subjects.filter(subject => 
+                    !subject.streamFilter || subject.streamFilter === student.stream
+                );
+                
+                let studentTotalScore = 0;
+                let studentTotalMaxMark = 0; // Max Mark calculated per student stream
+
                 // Calculate subject scores/grades
                 const newMarks = {};
-                subjects.forEach(subject => {
+                
+                // Iterate over ALL subjects, but only count scores for relevant ones
+                subjects.forEach(subject => { 
+                    const isRelevant = !subject.streamFilter || subject.streamFilter === student.stream;
+                    
                     let score = student.marks[subject.id]?.score || 0;
                     let subjectMaxMark = subject.maxMark;
 
                     // If composite, recalculate score from sub-subjects
                     if (subject.isComposite && subject.subSubjects.length > 0) {
-                        score = subject.subSubjects.reduce((sum, ss) => sum + (student.marks[subject.id]?.subMarks?.[ss.name] || 0), 0);
                         subjectMaxMark = subject.subSubjects.reduce((sum, ss) => sum + ss.maxMark, 0);
+                        // Also update the score based on sub-marks if present
+                        score = subject.subSubjects.reduce((sum, ss) => sum + (student.marks[subject.id]?.subMarks?.[ss.name] || 0), 0);
                     }
                     
-                    studentTotalScore += score;
+                    if (isRelevant) {
+                        studentTotalScore += score;
+                        studentTotalMaxMark += subjectMaxMark; // Add to student's specific Max Mark
+                    }
+
+                    // Store calculated grade/max mark (even for irrelevant subjects, for completeness in state)
                     newMarks[subject.id] = {
                         ...student.marks[subject.id],
                         score: score,
@@ -124,15 +144,15 @@
                         maxMark: subjectMaxMark
                     };
                 });
-
-                const studentPercentage = totalMaxMark > 0 ? (studentTotalScore / totalMaxMark) * 100 : 0;
+                
+                const studentPercentage = studentTotalMaxMark > 0 ? (studentTotalScore / studentTotalMaxMark) * 100 : 0;
 
                 return {
                     ...student,
                     marks: newMarks,
                     total: studentTotalScore,
                     percentage: studentPercentage.toFixed(2),
-                    totalMaxMark: totalMaxMark,
+                    totalMaxMark: studentTotalMaxMark, // Store specific Max Mark
                 };
             });
 
@@ -365,25 +385,31 @@
         // --- Tab Renderers ---
 
         const renderMarksheetTable = (students, subjects) => {
-            const totalMaxMark = students[0]?.totalMaxMark || 0;
             
             const headerCells = subjects.map(s => `
                 <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap">
-                    ${s.name} (/${s.maxMark})
+                    ${s.name} (/${s.maxMark}${s.streamFilter ? ' - ' + s.streamFilter.split(' ')[0] : ''})
                 </th>
             `).join('');
 
             const studentRows = students.map(student => {
                 const markCells = subjects.map(subject => {
                     const markEntry = student.marks[subject.id] || {};
-                    return `
-                        <td class="px-3 py-2 text-sm text-center">
+                    const isRelevant = !subject.streamFilter || subject.streamFilter === student.stream;
+                    
+                    let cellContent = '';
+                    if (isRelevant) {
+                        cellContent = `
                             <div class="p-1 rounded-md ${markEntry.bgColor || 'bg-gray-100'}">
                                 <span class="font-mono font-medium text-gray-800">${markEntry.score || 0}</span>
                                 <span class="block text-xs font-bold ${markEntry.color || 'text-gray-500'}">${markEntry.grade || 'N/A'}</span>
                             </div>
-                        </td>
-                    `;
+                        `;
+                    } else {
+                        cellContent = `<span class="text-xs text-gray-400 font-mono">N/A</span>`;
+                    }
+
+                    return `<td class="px-3 py-2 text-sm text-center">${cellContent}</td>`;
                 }).join('');
 
                 return `
@@ -392,7 +418,10 @@
                         <td class="px-3 py-2 text-sm text-gray-900">${student.name}</td>
                         <td class="px-3 py-2 text-sm text-gray-500">${student.stream}</td>
                         ${markCells}
-                        <td class="px-3 py-2 text-sm font-bold text-center text-indigo-700">${student.total}</td>
+                        <td class="px-3 py-2 text-sm font-bold text-center text-indigo-700">
+                            ${student.total}
+                            <span class="block text-xs font-normal text-gray-500">/${student.totalMaxMark}</span>
+                        </td>
                         <td class="px-3 py-2 text-sm font-semibold text-center">${student.percentage}%</td>
                         <td class="px-3 py-2 text-center">
                             <button data-student-id="${student.id}" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium transition-colors view-report-btn">
@@ -417,7 +446,7 @@
                                 <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                                 <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Stream</th>
                                 ${headerCells}
-                                <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Total (/${totalMaxMark})</th>
+                                <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Total Score / Max</th>
                                 <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Percentage</th>
                                 <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Action</th>
                             </tr>
@@ -432,8 +461,16 @@
         };
         
         const renderMarksheetTab = () => {
+            const streamOptionsHtml = STREAMS.map(stream => `<option value="${stream}">${stream}</option>`).join('');
+            
             const studentEntryRows = appState.data.students.map(student => {
                 const subjectInputs = appState.data.subjects.map(subject => {
+                    const isRelevant = !subject.streamFilter || subject.streamFilter === student.stream;
+
+                    if (!isRelevant) {
+                        return `<td class="px-3 py-2 text-center text-gray-400 text-sm italic">N/A</td>`;
+                    }
+
                     if (subject.isComposite && subject.subSubjects.length > 0) {
                         const subInputs = subject.subSubjects.map(ss => `
                             <div class="flex items-center justify-center space-x-1 text-xs">
@@ -482,9 +519,7 @@
                             <div class="space-y-3" id="add-student-form">
                                 <input type="text" id="student-name-input" placeholder="Student Name" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
                                 <select id="student-stream-input" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white">
-                                    <option value="Computer Science">Computer Science</option>
-                                    <option value="Biology Science">Biology Science</option>
-                                    <option value="Commerce">Commerce</option>
+                                    ${streamOptionsHtml}
                                 </select>
                                 
                                 <!-- NEW: File Upload Input -->
@@ -516,7 +551,7 @@
                                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase">Name (Stream)</th>
                                     ${appState.data.subjects.map(s => `
                                         <th class="px-3 py-3 text-center text-xs font-medium text-gray-600 uppercase whitespace-nowrap">
-                                            ${s.name} (Max: ${s.maxMark})
+                                            ${s.name} (Max: ${s.maxMark}${s.streamFilter ? ' - ' + s.streamFilter.split(' ')[0] : ''})
                                         </th>
                                     `).join('')}
                                 </tr>
@@ -552,29 +587,31 @@
                 </div>
             `;
             
-            const subjectRows = appState.data.subjects.map(s => {
-                const markEntry = student.marks[s.id] || {};
-                
-                const subSubjectRows = s.isComposite && s.subSubjects.length > 0 ? 
-                    s.subSubjects.map(ss => `
-                        <tr class="bg-white text-gray-600 hover:bg-gray-50">
-                            <td class="px-6 py-2 text-xs italic">-- ${ss.name}</td>
-                            <td class="px-4 py-2 text-xs text-center">${ss.maxMark}</td>
-                            <td class="px-4 py-2 text-xs text-center">${student.marks[s.id]?.subMarks?.[ss.name] || 0}</td>
-                            <td colspan="2" class="px-4 py-2 text-xs text-center"></td>
-                        </tr>
-                    `).join('') : '';
+            const subjectRows = appState.data.subjects
+                .filter(s => !s.streamFilter || s.streamFilter === student.stream) // Filter subjects for report
+                .map(s => {
+                    const markEntry = student.marks[s.id] || {};
+                    
+                    const subSubjectRows = s.isComposite && s.subSubjects.length > 0 ? 
+                        s.subSubjects.map(ss => `
+                            <tr class="bg-white text-gray-600 hover:bg-gray-50">
+                                <td class="px-6 py-2 text-xs italic">-- ${ss.name}</td>
+                                <td class="px-4 py-2 text-xs text-center">${ss.maxMark}</td>
+                                <td class="px-4 py-2 text-xs text-center">${student.marks[s.id]?.subMarks?.[ss.name] || 0}</td>
+                                <td colspan="2" class="px-4 py-2 text-xs text-center"></td>
+                            </tr>
+                        `).join('') : '';
 
-                return `
-                    <tr class="bg-indigo-50/50">
-                        <td class="px-4 py-3 text-sm font-semibold text-gray-800">${s.name}</td>
-                        <td class="px-4 py-3 text-sm text-center">${markEntry.maxMark || s.maxMark}</td>
-                        <td class="px-4 py-3 text-sm font-bold text-center text-gray-800">${markEntry.score || 0}</td>
-                        <td class="px-4 py-3 text-sm text-center font-medium">${markEntry.percentage || '0.00'}%</td>
-                        <td class="px-4 py-3 text-sm font-extrabold text-center ${markEntry.color || 'text-gray-500'}">${markEntry.grade || 'N/A'}</td>
-                    </tr>
-                    ${subSubjectRows}
-                `;
+                    return `
+                        <tr class="bg-indigo-50/50">
+                            <td class="px-4 py-3 text-sm font-semibold text-gray-800">${s.name}</td>
+                            <td class="px-4 py-3 text-sm text-center">${markEntry.maxMark || s.maxMark}</td>
+                            <td class="px-4 py-3 text-sm font-bold text-center text-gray-800">${markEntry.score || 0}</td>
+                            <td class="px-4 py-3 text-sm text-center font-medium">${markEntry.percentage || '0.00'}%</td>
+                            <td class="px-4 py-3 text-sm font-extrabold text-center ${markEntry.color || 'text-gray-500'}">${markEntry.grade || 'N/A'}</td>
+                        </tr>
+                        ${subSubjectRows}
+                    `;
             }).join('');
 
             return `
@@ -587,7 +624,7 @@
                             <p class="text-lg font-semibold text-indigo-600 mt-2">${appState.data.institution.examName} - Progress Report</p>
                         </div>
                         <!-- Logo Area -->
-                        <img src="${student.photoUrl || 'https://placehold.co/100x40/4F46E5/ffffff?text=LOGO'}" alt="Logo" class="h-10 w-auto rounded-lg shadow-md"/>
+                        <img src="${appState.data.institution.logoUrl || 'https://placehold.co/100x40/4F46E5/ffffff?text=LOGO'}" alt="Logo" class="h-10 w-auto rounded-lg shadow-md" onerror="this.onerror=null; this.src='https://placehold.co/100x40/4F46E5/ffffff?text=LOGO'"/>
                     </div>
 
                     <!-- Student Details -->
@@ -679,6 +716,10 @@
         };
 
         const renderSettingsTab = () => {
+            const streamOptionsForSubject = [''].concat(STREAMS).map(stream => 
+                `<option value="${stream}" ${stream === '' ? 'selected' : ''}>${stream || 'Common (All Streams)'}</option>`
+            ).join('');
+
             const subjectListHtml = appState.data.subjects.map(s => {
                 const subSubjectList = s.subSubjects.map(ss => `
                     <div class="flex justify-between items-center text-sm ml-4 bg-gray-50 p-2 rounded-md shadow-inner">
@@ -705,10 +746,16 @@
                         <input type="number" min="1" value="${s.maxMark}" data-subject-id="${s.id}" class="w-20 p-1 border border-gray-300 rounded-md text-center text-sm subject-max-mark-input"/>
                     </div>`;
 
+                // Stream Tag Display
+                const streamTag = s.streamFilter ? 
+                    `<span class="text-xs font-medium text-white px-2 py-0.5 rounded-full bg-blue-500 ml-2">${s.streamFilter.split(' ')[0]} Stream</span>` : 
+                    `<span class="text-xs font-medium text-gray-700 px-2 py-0.5 rounded-full bg-gray-200 ml-2">Common</span>`;
+
+
                 return `
                     <div class="p-4 border border-gray-200 rounded-lg shadow-sm">
                         <div class="flex justify-between items-center">
-                            <span class="text-lg font-semibold text-gray-800">${s.name}</span>
+                            <span class="text-lg font-semibold text-gray-800">${s.name} ${streamTag}</span>
                             <div class="flex items-center space-x-4">
                                 ${maxMarkControl}
                                 <div class="space-x-2">
@@ -753,9 +800,21 @@
                         <!-- Add Subject Form -->
                         <div class="p-4 bg-indigo-50 rounded-lg mb-6">
                             <h4 class="font-semibold text-indigo-700 mb-2">Add New Subject</h4>
-                            <div class="flex space-x-2">
-                                <input type="text" id="new-subject-name" placeholder="Subject Name" class="flex-grow p-2 border border-gray-300 rounded-lg"/>
-                                <input type="number" id="new-subject-max-mark" placeholder="Max Mark" min="1" value="100" class="w-32 p-2 border border-gray-300 rounded-lg text-center"/>
+                            <div class="flex flex-wrap items-end gap-3">
+                                <div class="flex-grow">
+                                    <label class="block text-sm font-medium text-indigo-700 mb-1">Name</label>
+                                    <input type="text" id="new-subject-name" placeholder="Subject Name" class="w-full p-2 border border-gray-300 rounded-lg"/>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-indigo-700 mb-1">Max Mark</label>
+                                    <input type="number" id="new-subject-max-mark" placeholder="Max Mark" min="1" value="100" class="w-24 p-2 border border-gray-300 rounded-lg text-center"/>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-indigo-700 mb-1">Stream Filter</label>
+                                    <select id="new-subject-stream" class="p-2 border border-gray-300 rounded-lg bg-white w-40 text-sm text-gray-700">
+                                        ${streamOptionsForSubject}
+                                    </select>
+                                </div>
                                 <button id="btn-add-subject" class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-colors">Add Subject</button>
                             </div>
                         </div>
@@ -904,9 +963,11 @@
         const handleAddSubject = () => {
             const nameInput = document.getElementById('new-subject-name');
             const maxMarkInput = document.getElementById('new-subject-max-mark');
+            const streamInput = document.getElementById('new-subject-stream');
             
             const name = nameInput.value.trim();
             const maxMark = parseInt(maxMarkInput.value) || 0;
+            const streamFilter = streamInput.value || null;
 
             if (!name || maxMark <= 0) return;
 
@@ -915,6 +976,7 @@
                 id: newId,
                 name: name,
                 maxMark: maxMark,
+                streamFilter: streamFilter,
                 isComposite: false,
                 subSubjects: []
             };
@@ -924,6 +986,7 @@
             saveData({ subjects: updatedSubjects });
             nameInput.value = '';
             maxMarkInput.value = 100;
+            streamInput.value = '';
         };
         
         const handleSubjectMaxMarkChange = (e) => {
@@ -1010,7 +1073,7 @@
                             // Update the specific field
                             return { 
                                 ...ss, 
-                                [field]: field === 'maxMark' ? value : value // Use value (string) for name, value (number) for maxMark
+                                [field]: field === 'maxMark' ? value : value
                             };
                         }
                         return ss;
@@ -1118,8 +1181,11 @@
                     { Key: 'Total Max Mark', Value: student.totalMaxMark },
                     { Key: 'Overall Percentage', Value: `${student.percentage}%` },
                 ];
+                
+                // Only include relevant subjects in the report CSV
+                const relevantSubjects = appState.data.subjects.filter(s => !s.streamFilter || s.streamFilter === student.stream);
 
-                appState.data.subjects.forEach(s => {
+                relevantSubjects.forEach(s => {
                     const markEntry = student.marks[s.id] || {};
                     reportData.push({ Key: `${s.name} Score`, Value: markEntry.score || 0 });
                     reportData.push({ Key: `${s.name} Grade`, Value: markEntry.grade || 'N/A' });
@@ -1162,7 +1228,7 @@
                         return;
                     }
 
-                    // 1. Add/Update Subjects
+                    // 1. Add/Update Subjects - Assume subjects added from CSV are 'Common' by default
                     const existingSubjectNames = new Set(appState.data.subjects.map(s => s.name));
                     let updatedSubjects = [...appState.data.subjects];
 
@@ -1172,6 +1238,7 @@
                                 id: `sub-${Math.random().toString(36).substr(2, 9)}`,
                                 name: subjectName,
                                 maxMark: 100, // Default max mark for new subjects from CSV
+                                streamFilter: null, // Default to Common
                                 isComposite: false,
                                 subSubjects: []
                             });
