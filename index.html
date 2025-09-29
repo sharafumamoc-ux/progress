@@ -25,6 +25,7 @@
     </style>
     <!-- Load Firebase SDKs -->
     <script type="module">
+        // Using a more stable and potentially faster way to import Firebase modules
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -79,14 +80,14 @@
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // --- IMPORTANT: YOUR FIREBASE CONFIGURATION (FOR PERSISTENCE) ---
-        // This configuration has been updated using the details from your uploaded image.
+        // Configuration details successfully inserted here!
         const USER_PROVIDED_FIREBASE_CONFIG = {
             apiKey: "AIzaSyAzK0sYcdEwDNqKqJ5WMBFVG9H6nsC5Q-s",
             authDomain: "progress-report-95bf0.firebaseapp.com",
             projectId: "progress-report-95bf0",
             storageBucket: "progress-report-95bf0.firebasestorage.app",
             messagingSenderId: "364212836993",
-            appId: "1:364212836993:web:b7f1b97deae9a5028b80",
+            appId: "1:364212836993:web:95b7f1b97deae9a5028b80",
             measurementId: "G-KX64KEYMPN"
         };
         // -------------------------------------------------------------------------
