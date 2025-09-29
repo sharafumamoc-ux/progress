@@ -33,6 +33,10 @@
             border-color: #4F46E5;
             box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.3);
         }
+        .table-input:disabled {
+            background-color: #F3F4F6;
+            cursor: not-allowed;
+        }
         .table-row-selected {
             background-color: #EEF2FF;
         }
@@ -51,9 +55,31 @@
             color: #D1D5DB;
             font-size: 50px;
         }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 90%;
+            width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
     </style>
     <!-- Chosen Palette: Warm Neutrals with Indigo Accent -->
-    <!-- Application Structure Plan: A two-column dashboard layout remains the core structure. A new 'Header/Branding' section is added at the top for Institution details and the Exam Name. The left column features the dynamic, editable table, which now includes subject grades. The right column displays the detailed progress report and radar chart for a selected student. A new 'Photo Manager' block is added to the configuration area to handle student image uploads. The 'Subject Configuration & Data Management' section is expanded to include a manual 'Add Student' form and now allows dynamic subject removal via buttons. This structure is chosen to centralize configuration (top), provide a comprehensive overview (left), and offer deep-dive analysis (right), making the tool highly interactive and reflective of the source report's core calculation needs. -->
+    <!-- Application Structure Plan: A two-column dashboard layout remains the core structure. A new 'Header/Branding' section is added at the top for Institution details and the Exam Name. The left column features the dynamic, editable table, which now includes subject grades. The right column displays the detailed progress report and radar chart for a selected student. A new 'Photo Manager' block is added to the configuration area to handle student image uploads. The 'Subject Configuration & Data Management' section is expanded to include a manual 'Add Student' form and now allows dynamic subject removal via buttons. This structure is chosen to neutralize configuration (top), provide a comprehensive overview (left), and offer deep-dive analysis (right), making the tool highly interactive and reflective of the source report's core calculation needs. -->
     <!-- Visualization & Content Choices: 
         1. Branding Header: Report Info -> Institution Name, Logo, Exam Name. Goal -> Professional presentation & context. Viz/Method -> Fixed header block with responsive image (logo) and input field (Exam Name). Interaction -> Typing in the exam name updates the report headers instantly via JS. Justification -> Provides essential report context and branding as requested.
         2. Photo Manager: Report Info -> Student Photos. Goal -> Personalization of reports. Viz/Method -> Dropdown and File Input. Interaction -> Uploads are converted to Base64 and stored, then displayed on the report card. Justification -> Addresses the user request for optional student photos.
@@ -162,6 +188,19 @@
                     + Add Subject
                 </button>
             </div>
+
+            <!-- Data Persistence Warning and Clear Button -->
+            <div class="p-4 mt-6 border border-red-200 bg-red-50 rounded-lg col-span-full">
+                <h4 class="text-sm font-bold text-red-800 mb-2">Data Persistence (Saved Automatically in Browser)</h4>
+                <p class="text-xs text-red-700 mb-3">All application data (students, marks, subjects) is automatically saved to your browser's local storage. This data will remain until you clear your browser history or use the button below.</p>
+                
+                <div id="clear-data-prompt" class="hidden text-sm mb-2 text-red-800 font-medium">
+                    Are you sure? This action is permanent. Click again to confirm.
+                </div>
+                <button id="clear-data-btn" data-confirm="false" class="bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition duration-150 shadow-md text-sm">
+                    🗑️ Clear All Saved Data
+                </button>
+            </div>
         </section>
 
         <main class="grid grid-cols-1 xl:grid-cols-2 gap-8">
@@ -242,6 +281,12 @@
                             </div>
                         </div>
 
+                        <!-- Subsubject Details Table -->
+                        <div id="subsubject-details-container" class="mt-8">
+                             <h3 class="text-lg font-semibold text-gray-800 mb-2">Detailed Subject Breakdown</h3>
+                             <!-- Details will be injected here -->
+                        </div>
+
                         <div class="mt-8">
                              <h3 class="text-lg font-semibold text-gray-800 mb-2">Subject Performance Radar</h3>
                              <div class="chart-container">
@@ -285,21 +330,50 @@
         </footer>
     </div>
 
+    <!-- Subsubject Editor Modal -->
+    <div id="subsubject-editor-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">Manage Subsubjects for: <span id="current-subject-name" class="text-indigo-600"></span></h3>
+            
+            <p class="text-sm text-gray-600 mb-3">Define the components (Theory, Practical, Exam, etc.) and their maximum marks. The sum of subsubjects will become the main subject's total max mark.</p>
+
+            <div id="subsubject-list" class="space-y-3 mb-6 p-4 border rounded-lg bg-gray-50 max-h-60 overflow-y-auto">
+                <!-- Subsubject inputs will be rendered here -->
+            </div>
+
+            <div class="flex items-center space-x-3 border-t pt-4">
+                <input type="text" id="new-subsubject-name" placeholder="New Subsubject Name (e.g., Theory)" class="table-input w-full !text-left !py-2 !px-3" />
+                <input type="number" id="new-subsubject-max" min="1" value="50" placeholder="Max Marks" class="table-input w-24 !text-left !py-2 !px-3" />
+                <button id="add-subsubject-btn" class="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg transition duration-150 shadow-md flex-shrink-0">
+                    + Add
+                </button>
+            </div>
+            
+            <div class="mt-6 flex justify-end">
+                <button id="close-modal-btn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg transition duration-150 shadow-md">
+                    Close & Apply Changes
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- End Subsubject Editor Modal -->
+
     <script>
+        // Data Storage Key
+        const STORAGE_KEY = 'gradebook_app_state';
+
         // Initial default data
         let subjectsConfig = [
-            { key: 'physics', name: 'Physics', maxMarks: 100 },
-            { key: 'chemistry', name: 'Chemistry', maxMarks: 100 },
-            { key: 'biology', name: 'Biology', maxMarks: 100 }
+            { key: 'physics', name: 'Physics', maxMarks: 100, subSubjects: [] },
+            { key: 'chemistry', name: 'Chemistry', maxMarks: 100, subSubjects: [] },
+            { key: 'biology', name: 'Biology', maxMarks: 100, subSubjects: [] }
         ];
 
-        // The list is empty, ready for Excel upload or manual addition.
         let studentsData = [];
-
         let selectedStudentId = null;
         let progressChart = null;
+        let currentSubjectKey = null; // Used by the Subsubject Editor Modal
         
-        // Default stream if none is provided in upload
         const DEFAULT_STREAM = "General Stream"; 
 
         const tableBody = document.getElementById('students-table-body');
@@ -315,7 +389,6 @@
         const excelUploadInput = document.getElementById('excel-upload');
         const photoUploadInput = document.getElementById('photo-upload-input');
         const photoStudentSelect = document.getElementById('photo-student-select');
-        // New manual student input fields
         const newStudentIdInput = document.getElementById('new-student-id');
         const newStudentNameInput = document.getElementById('new-student-name');
         const newStudentStreamInput = document.getElementById('new-student-stream');
@@ -323,11 +396,70 @@
         const downloadReportBtn = document.getElementById('download-report-btn');
         const printIndividualReportBtn = document.getElementById('print-individual-report-btn');
 
+        // Subsubject Modal Elements
+        const subsubjectEditorModal = document.getElementById('subsubject-editor-modal');
+        const currentSubjectNameSpan = document.getElementById('current-subject-name');
+        const subsubjectListDiv = document.getElementById('subsubject-list');
+        const newSubsubjectNameInput = document.getElementById('new-subsubject-name');
+        const newSubsubjectMaxInput = document.getElementById('new-subsubject-max');
+        const addSubsubjectBtn = document.getElementById('add-subsubject-btn');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+
+
+        // --- DATA PERSISTENCE FUNCTIONS ---
+        
+        const saveState = () => {
+            try {
+                const state = {
+                    students: studentsData,
+                    subjects: subjectsConfig,
+                    examName: examNameInput.value
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            } catch (e) {
+                console.error("Error saving state to localStorage:", e);
+            }
+        };
+
+        const loadState = () => {
+            try {
+                const serializedState = localStorage.getItem(STORAGE_KEY);
+                if (serializedState) {
+                    const state = JSON.parse(serializedState);
+                    
+                    if (state.students && Array.isArray(state.students)) {
+                        studentsData = state.students;
+                    }
+
+                    if (state.subjects && Array.isArray(state.subjects)) {
+                        subjectsConfig = state.subjects;
+                        // Ensure all loaded subjects have the subSubjects array for consistency
+                        subjectsConfig.forEach(sub => {
+                            if (!sub.subSubjects) sub.subSubjects = [];
+                            // Ensure marks are objects for subjects without subsubjects defined if they were imported flat
+                            studentsData.forEach(student => {
+                                const markValue = student.marks[sub.key];
+                                if (typeof markValue === 'number' || markValue === undefined) {
+                                    student.marks[sub.key] = { mark: markValue || 0, subMarks: {} };
+                                }
+                            });
+                        });
+                    }
+
+                    if (state.examName !== undefined) {
+                        examNameInput.value = state.examName;
+                    }
+                }
+            } catch (e) {
+                console.warn("Could not load state from localStorage. Starting fresh.", e);
+                localStorage.removeItem(STORAGE_KEY);
+            }
+        };
 
         // --- UTILITY AND SETUP FUNCTIONS ---
         
         const initializeListeners = () => {
-             // Re-attach listeners after DOM restoration
+             // Main Listeners
             excelUploadInput.addEventListener('change', handleFileUpload); 
             photoUploadInput.addEventListener('change', handlePhotoUpload);
             addStudentManuallyBtn.addEventListener('click', addStudentManually);
@@ -337,6 +469,7 @@
                  printIndividualReportBtn.addEventListener('click', () => printIndividualReport(selectedStudentId));
             }
 
+            // Table Listeners (Delegate)
             tableBody.addEventListener('change', (e) => {
                 if(e.target.classList.contains('table-input') && e.target.dataset.subject) {
                     const studentId = e.target.closest('tr').dataset.studentId;
@@ -345,25 +478,228 @@
                 }
             });
 
+            // Subject Config Listeners (Delegate)
             subjectConfigInputs.addEventListener('change', (e) => {
-                if(e.target.tagName === 'INPUT' && e.target.dataset.key) {
+                if(e.target.tagName === 'INPUT' && e.target.dataset.key && !e.target.dataset.subKey) {
                     handleMaxMarkChange(e.target.dataset.key, e.target.value);
                 }
             });
             
             subjectConfigInputs.addEventListener('click', (e) => {
-                const button = e.target.closest('[data-action="remove-subject"]');
-                if (button) {
-                    const key = button.dataset.key;
+                const removeBtn = e.target.closest('[data-action="remove-subject"]');
+                const manageBtn = e.target.closest('[data-action="manage-subsubjects"]');
+                
+                if (removeBtn) {
+                    const key = removeBtn.dataset.key;
                     removeSubject(key);
+                } else if (manageBtn) {
+                    currentSubjectKey = manageBtn.dataset.key;
+                    openSubSubjectEditor();
                 }
             });
 
-
             addSubjectBtn.addEventListener('click', addSubject);
+
+            // Subsubject Modal Listeners
+            addSubsubjectBtn.addEventListener('click', addSubSubjectConfig);
+            closeModalBtn.addEventListener('click', closeSubSubjectEditor);
+            subsubjectListDiv.addEventListener('click', handleSubsubjectListClick);
+            subsubjectListDiv.addEventListener('change', handleSubsubjectListChange);
+
+            // Report Card Listener (for editing submarks)
+            document.getElementById('subsubject-details-container').addEventListener('change', (e) => {
+                if(e.target.dataset.subMarkKey && selectedStudentId) {
+                    const subjectKey = e.target.dataset.subjectKey;
+                    const subKey = e.target.dataset.subMarkKey;
+                    handleSubMarkChange(selectedStudentId, subjectKey, subKey, e.target.value);
+                }
+            });
+
+            // Clear Data Button Logic (Two-click confirmation)
+            const clearDataBtn = document.getElementById('clear-data-btn');
+            const clearDataPrompt = document.getElementById('clear-data-prompt');
+            let confirmationTimeout = null;
+
+            clearDataBtn.addEventListener('click', () => {
+                if (clearDataBtn.dataset.confirm === 'true') {
+                    localStorage.removeItem(STORAGE_KEY);
+                    studentsData = [];
+                    subjectsConfig = [
+                        { key: 'physics', name: 'Physics', maxMarks: 100, subSubjects: [] },
+                        { key: 'chemistry', name: 'Chemistry', maxMarks: 100, subSubjects: [] },
+                        { key: 'biology', name: 'Biology', maxMarks: 100, subSubjects: [] }
+                    ];
+                    examNameInput.value = "First Mid-Term Examination";
+                    selectedStudentId = null;
+                    refreshAll();
+
+                    clearDataBtn.textContent = 'Data Cleared!';
+                    clearDataBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                    clearDataBtn.classList.add('bg-green-500');
+                    clearDataPrompt.classList.add('hidden');
+                    
+                    clearTimeout(confirmationTimeout);
+
+                    setTimeout(() => {
+                        clearDataBtn.textContent = '🗑️ Clear All Saved Data';
+                        clearDataBtn.classList.remove('bg-green-500');
+                        clearDataBtn.classList.add('bg-red-500', 'hover:bg-red-600');
+                        clearDataBtn.dataset.confirm = 'false';
+                    }, 3000);
+
+                } else {
+                    clearDataBtn.dataset.confirm = 'true';
+                    clearDataBtn.textContent = 'Click to CONFIRM CLEARING!';
+                    clearDataPrompt.classList.remove('hidden');
+
+                    confirmationTimeout = setTimeout(() => {
+                        clearDataBtn.dataset.confirm = 'false';
+                        clearDataBtn.textContent = '🗑️ Clear All Saved Data';
+                        clearDataPrompt.classList.add('hidden');
+                    }, 5000);
+                }
+            });
         }
 
-        // --- EXCEL HANDLING FUNCTIONS (Flexible Format Detection) ---
+        // --- SUB-SUBJECT EDITOR LOGIC ---
+
+        const openSubSubjectEditor = () => {
+            const subject = subjectsConfig.find(s => s.key === currentSubjectKey);
+            if (!subject) return;
+
+            currentSubjectNameSpan.textContent = subject.name;
+            renderSubsubjectList();
+            subsubjectEditorModal.classList.remove('hidden');
+        };
+
+        const closeSubSubjectEditor = () => {
+            subsubjectEditorModal.classList.add('hidden');
+            currentSubjectKey = null;
+            refreshAll(); 
+        };
+
+        const renderSubsubjectList = () => {
+            const subject = subjectsConfig.find(s => s.key === currentSubjectKey);
+            if (!subject) return;
+
+            subsubjectListDiv.innerHTML = '';
+            
+            if (subject.subSubjects.length === 0) {
+                 subsubjectListDiv.innerHTML = '<p class="text-sm text-gray-500 italic">No subsubjects defined. Add one below.</p>';
+                 return;
+            }
+
+            subject.subSubjects.forEach(sub => {
+                const item = document.createElement('div');
+                item.className = 'flex items-center space-x-3 bg-white p-3 rounded-md border';
+                item.dataset.subKey = sub.key;
+
+                item.innerHTML = `
+                    <input type="text" value="${sub.name}" class="table-input !w-1/2 !text-left !py-1 !px-2 font-medium" data-sub-action="name" data-sub-key="${sub.key}">
+                    <input type="number" min="1" value="${sub.maxMarks}" class="table-input !w-20 !py-1 !px-2 text-center" data-sub-action="max" data-sub-key="${sub.key}">
+                    <span class="text-xs text-gray-500 flex-shrink-0">Max</span>
+                    <button type="button" class="text-red-500 hover:text-red-700 transition-colors ml-auto flex-shrink-0" data-sub-action="remove" data-sub-key="${sub.key}">
+                        🗑️
+                    </button>
+                `;
+                subsubjectListDiv.appendChild(item);
+            });
+        };
+
+        const addSubSubjectConfig = () => {
+            const subject = subjectsConfig.find(s => s.key === currentSubjectKey);
+            const name = newSubsubjectNameInput.value.trim();
+            const max = parseInt(newSubsubjectMaxInput.value, 10);
+
+            if (!subject || !name || isNaN(max) || max < 1) {
+                alert('Please enter a valid name and max marks (minimum 1).');
+                return;
+            }
+
+            const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (subject.subSubjects.some(sub => sub.key === key)) {
+                alert('Subsubject name already exists for this subject.');
+                return;
+            }
+            
+            const newSub = { key, name, maxMarks: max };
+            subject.subSubjects.push(newSub);
+            
+            // Initialize the new submark for all students
+            studentsData.forEach(student => {
+                if (!student.marks[currentSubjectKey].subMarks) {
+                    student.marks[currentSubjectKey].subMarks = {};
+                }
+                student.marks[currentSubjectKey].subMarks[key] = 0;
+            });
+
+            newSubsubjectNameInput.value = '';
+            newSubsubjectMaxInput.value = '50';
+            
+            recalculateSubjectMax(currentSubjectKey);
+            renderSubsubjectList();
+        };
+
+        const handleSubsubjectListClick = (e) => {
+            const removeBtn = e.target.closest('[data-sub-action="remove"]');
+            if (removeBtn) {
+                const subKeyToRemove = removeBtn.dataset.subKey;
+                removeSubSubjectConfig(subKeyToRemove);
+            }
+        };
+
+        const handleSubsubjectListChange = (e) => {
+            const input = e.target.closest('input');
+            if (!input) return;
+
+            const subject = subjectsConfig.find(s => s.key === currentSubjectKey);
+            const sub = subject.subSubjects.find(s => s.key === input.dataset.subKey);
+            if (!sub) return;
+
+            if (input.dataset.subAction === 'name') {
+                sub.name = input.value.trim();
+                // We don't change the key to avoid breaking student data linkages
+            } else if (input.dataset.subAction === 'max') {
+                let newMax = parseInt(input.value, 10);
+                if (isNaN(newMax) || newMax < 1) newMax = 1;
+                sub.maxMarks = newMax;
+                input.value = newMax;
+                recalculateSubjectMax(currentSubjectKey);
+            }
+            // No need for immediate refreshAll, as it happens on modal close
+        };
+        
+        const removeSubSubjectConfig = (subKey) => {
+            const subject = subjectsConfig.find(s => s.key === currentSubjectKey);
+            if (!subject) return;
+
+            subject.subSubjects = subject.subSubjects.filter(sub => sub.key !== subKey);
+
+            // Remove submark data from all students
+            studentsData.forEach(student => {
+                if (student.marks[currentSubjectKey].subMarks && student.marks[currentSubjectKey].subMarks[subKey] !== undefined) {
+                    delete student.marks[currentSubjectKey].subMarks[subKey];
+                }
+            });
+
+            recalculateSubjectMax(currentSubjectKey);
+            renderSubsubjectList();
+        };
+
+        const recalculateSubjectMax = (subjectKey) => {
+            const subject = subjectsConfig.find(s => s.key === subjectKey);
+            if (!subject) return;
+
+            if (subject.subSubjects.length > 0) {
+                const newMax = subject.subSubjects.reduce((sum, sub) => sum + sub.maxMarks, 0);
+                subject.maxMarks = newMax;
+            } 
+            
+            // Note: If subSubjects is empty, maxMarks is already set to the default or manually entered value, which is fine.
+        };
+
+
+        // --- EXCEL HANDLING FUNCTIONS ---
 
         const processWorkbook = (workbook) => {
             const sheetName = workbook.SheetNames[0];
@@ -385,7 +721,7 @@
 
             let idIndex = -1;
             let nameIndex = -1;
-            let streamIndex = -1; // New stream index
+            let streamIndex = -1;
 
             headers.forEach((header, index) => {
                 const normalizedHeader = header.replace(/[^a-z0-9]/g, '');
@@ -415,11 +751,12 @@
             const subjectIndices = [];
             
             headers.forEach((header, index) => {
-                if (index !== idIndex && index !== nameIndex && index !== streamIndex) { // Exclude stream column
+                if (index !== idIndex && index !== nameIndex && index !== streamIndex) {
                     const name = rawHeaders[index];
                     const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
                     if (key) {
-                        subjectsConfig.push({ key, name, maxMarks: 100 });
+                        // When loading from Excel, subjects start with no subsubjects
+                        subjectsConfig.push({ key, name, maxMarks: 100, subSubjects: [] });
                         subjectIndices.push(index);
                     }
                 }
@@ -440,7 +777,7 @@
                 const student = {
                     id: String(row[idIndex]).trim(),
                     name: String(row[nameIndex]).trim(),
-                    stream: streamValue, // New stream field
+                    stream: streamValue,
                     marks: {},
                     photoBase64: null 
                 };
@@ -449,7 +786,11 @@
                     const subjectKey = subjectsConfig[subIndex]?.key;
                     if (subjectKey) {
                         const mark = Number(row[colIndex]);
-                        student.marks[subjectKey] = isNaN(mark) ? 0 : mark; 
+                        // When loading flat marks from Excel, store them as a flat mark with no subMarks
+                        student.marks[subjectKey] = {
+                            mark: isNaN(mark) ? 0 : mark,
+                            subMarks: {}
+                        };
                     }
                 });
 
@@ -464,7 +805,7 @@
             selectedStudentId = null;
             return true;
         };
-
+        
         const handleFileUpload = (event) => {
             const file = event.target.files[0];
             if (!file) return;
@@ -488,134 +829,6 @@
 
             reader.readAsArrayBuffer(file);
         };
-
-        // --- DOWNLOAD REPORT FUNCTION (EXCEL) ---
-
-        const downloadReport = () => {
-            const studentsWithMetrics = calculateAllMetrics();
-            const rankedStudents = calculateRanks(studentsWithMetrics);
-            
-            if (rankedStudents.length === 0) {
-                alert('No data available to download. Please add students first.');
-                return;
-            }
-
-            const subjectHeaders = subjectsConfig.flatMap(sub => [sub.name + ' (Mark)', sub.name + ' (Grade)']);
-
-            const headerRow = [
-                'Rank', 'ID', 'Name', 'Stream', 'Total Marks', 'Max Total', 'Percentage', 'Overall Grade', ...subjectHeaders
-            ];
-            
-            const dataToExport = [headerRow];
-
-            rankedStudents.sort((a, b) => a.rank - b.rank);
-
-            rankedStudents.forEach(student => {
-                const subjectData = subjectsConfig.flatMap(sub => {
-                    const metrics = student.subjectMetrics[sub.key];
-                    return [metrics.mark, metrics.grade];
-                });
-                
-                const row = [
-                    student.rank,
-                    student.id,
-                    student.name,
-                    student.stream, // Include stream
-                    student.total,
-                    student.maxTotal,
-                    (student.percentage * 100).toFixed(2) + '%',
-                    student.grade,
-                    ...subjectData
-                ];
-                dataToExport.push(row);
-            });
-
-            const ws = XLSX.utils.aoa_to_sheet(dataToExport);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Class Report");
-            
-            const examName = examNameInput.value.trim().replace(/[^a-z0-9]/gi, '_') || 'Gradebook_Report';
-            XLSX.writeFile(wb, `${examName}_Full_Class_Data_${new Date().toISOString().slice(0, 10)}.xlsx`);
-        };
-        
-        // --- PRINT/PDF FUNCTION (INDIVIDUAL REPORT) ---
-        
-        const printIndividualReport = (studentId) => {
-            if (!studentId) {
-                alert("Please select a student from the table first to print their report.");
-                return;
-            }
-
-            const originalContents = document.body.innerHTML;
-            const reportContents = document.getElementById('report-card-container').outerHTML;
-            const originalTitle = document.title;
-            const student = studentsData.find(s => s.id === studentId);
-            
-            document.title = `${student.name}_${examNameInput.value.trim()}_Report`;
-
-            // Wrap the report content in a temporary body for printing
-            document.body.innerHTML = `
-                <div style="padding: 20px; max-width: 800px; margin: 0 auto;">
-                    ${reportContents}
-                </div>
-            `;
-            
-            const tempPrintBtn = document.getElementById('print-individual-report-btn');
-            if (tempPrintBtn) {
-                 tempPrintBtn.style.display = 'none';
-            }
-
-            window.print();
-            
-            document.body.innerHTML = originalContents;
-            document.title = originalTitle;
-            
-            initializeListeners();
-            refreshAll(); 
-            handleRowSelect(studentId);
-        };
-
-
-        // --- PHOTO MANAGER FUNCTIONS ---
-
-        const renderPhotoManager = () => {
-            photoStudentSelect.innerHTML = '<option value="">-- Select Student --</option>';
-            studentsData.forEach(student => {
-                const option = document.createElement('option');
-                option.value = student.id;
-                option.textContent = `${student.name} (${student.id})`;
-                photoStudentSelect.appendChild(option);
-            });
-            photoUploadInput.value = '';
-        };
-
-        const handlePhotoUpload = (event) => {
-            const file = event.target.files[0];
-            const studentId = photoStudentSelect.value;
-
-            if (!file || !studentId) {
-                alert('Please select a student and a file first.');
-                return;
-            }
-            
-            if (!file.type.match('image/jpeg') && !file.type.match('image/png')) {
-                alert('Please select a JPG or PNG image file.');
-                event.target.value = '';
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const student = studentsData.find(s => s.id === studentId);
-                if (student) {
-                    student.photoBase64 = e.target.result;
-                    if (selectedStudentId === studentId) {
-                        renderProgressReport(studentId);
-                    }
-                }
-            };
-            reader.readAsDataURL(file);
-        };
         
         // --- MANUAL STUDENT ADDITION ---
 
@@ -636,13 +849,16 @@
 
             const newMarks = {};
             subjectsConfig.forEach(sub => {
-                newMarks[sub.key] = 0;
+                newMarks[sub.key] = {
+                    mark: 0, 
+                    subMarks: {}
+                };
             });
 
             const newStudent = {
                 id: id,
                 name: name,
-                stream: stream, // New stream field
+                stream: stream,
                 marks: newMarks,
                 photoBase64: null
             };
@@ -651,7 +867,6 @@
 
             newStudentIdInput.value = '';
             newStudentNameInput.value = '';
-            // Don't clear stream input
 
             refreshAll();
             handleRowSelect(id);
@@ -664,6 +879,7 @@
             const examName = examNameInput.value.trim() || 'Exam Results';
             mainExamDisplay.textContent = examName;
             reportExamName.textContent = examName;
+            saveState();
         };
 
         const getGrade = (percentage) => {
@@ -692,14 +908,29 @@
             const subjectMetrics = {};
 
             subjectsConfig.forEach(sub => {
-                const mark = student.marks[sub.key] || 0;
-                const percentage = sub.maxMarks > 0 ? mark / sub.maxMarks : 0;
+                const markData = student.marks[sub.key] || { mark: 0, subMarks: {} };
+                let subjectMark = markData.mark || 0;
+                let subjectMax = sub.maxMarks;
+
+                if (sub.subSubjects && sub.subSubjects.length > 0) {
+                    subjectMark = sub.subSubjects.reduce((sum, s) => {
+                        const subMark = markData.subMarks[s.key] || 0;
+                        return sum + subMark;
+                    }, 0);
+                    // Recalculate subjectMax in case it wasn't saved correctly (safety)
+                    subjectMax = sub.subSubjects.reduce((sum, s) => sum + s.maxMarks, 0);
+                    
+                    // Update the student's main mark field
+                    markData.mark = subjectMark; 
+                }
+                
+                const percentage = subjectMax > 0 ? subjectMark / subjectMax : 0;
                 const { grade, color } = getGrade(percentage);
 
-                subjectMetrics[sub.key] = { mark, percentage, grade, color, maxMarks: sub.maxMarks };
+                subjectMetrics[sub.key] = { mark: subjectMark, maxMarks: subjectMax, percentage, grade, color, subMarks: markData.subMarks };
 
-                total += mark;
-                maxTotal += sub.maxMarks;
+                total += subjectMark;
+                maxTotal += subjectMax;
             });
 
             const overallPercentage = maxTotal > 0 ? total / maxTotal : 0;
@@ -709,13 +940,13 @@
         };
         
         const calculateAllMetrics = () => {
+            // Note: This must modify studentsData in place to update the main subject.mark when subsubjects exist.
             return studentsData.map(calculateMetrics);
         };
 
         const calculateRanks = (studentsWithMetrics) => {
             const percentages = studentsWithMetrics.map(s => s.percentage);
             return studentsWithMetrics.map(student => {
-                // Rank is calculated based on overall percentage across the entire class (all streams)
                 const rank = percentages.filter(p => p > student.percentage).length + 1;
                 return { ...student, rank };
             });
@@ -729,16 +960,26 @@
             subjectsConfig.forEach(sub => {
                 const div = document.createElement('div');
                 div.className = 'flex flex-col space-y-1 p-3 border border-gray-200 rounded-lg bg-white shadow-sm';
+
+                const isComposite = sub.subSubjects.length > 0;
+                const maxInputHtml = isComposite 
+                    ? `<span class="font-semibold text-indigo-600">${sub.maxMarks} (Total of Subsubjects)</span>`
+                    : `<input type="number" min="1" id="max-${sub.key}" class="table-input !w-full !text-left !py-2 !px-3" value="${sub.maxMarks}" data-key="${sub.key}">`;
+
                 div.innerHTML = `
                     <label class="text-sm font-bold text-gray-700 block mb-1">${sub.name}</label>
                     <div class="flex items-center space-x-2">
-                        <input type="number" min="1" id="max-${sub.key}" class="table-input !w-full !text-left !py-2 !px-3" value="${sub.maxMarks}" data-key="${sub.key}">
+                        ${maxInputHtml}
                         <button type="button" class="text-red-500 hover:text-red-700 transition-colors p-1" data-action="remove-subject" data-key="${sub.key}">
-                            <!-- Unicode Trash Icon -->
                             <span class="text-xl leading-none">🗑️</span>
                         </button>
                     </div>
-                    <p class="text-xs text-gray-500">Max Marks</p>
+                    <div class="flex items-center space-x-2 text-xs text-gray-500">
+                        <span class="flex-grow">${isComposite ? 'Max Marks (Calculated)' : 'Max Marks (Editable)'}</span>
+                        <button type="button" class="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-2 py-1 rounded-md font-medium text-xs transition-colors" data-action="manage-subsubjects" data-key="${sub.key}">
+                            ${isComposite ? 'Edit Breakdown' : '+ Add Subsubjects'}
+                        </button>
+                    </div>
                 `;
                 subjectConfigInputs.appendChild(div);
             });
@@ -766,7 +1007,7 @@
             if (isNaN(maxMark) || maxMark < 1) maxMark = 100;
 
             const subject = subjectsConfig.find(s => s.key === key);
-            if (subject) {
+            if (subject && subject.subSubjects.length === 0) {
                 subject.maxMarks = maxMark;
                 refreshAll();
             }
@@ -800,8 +1041,8 @@
 
             tableBody.innerHTML = '';
             if (rankedStudents.length === 0) {
-                // Adjust colspan to account for the new 'Stream' column
-                tableBody.innerHTML = `<tr><td colspan="${5 + (subjectsConfig.length * 2) + 2}" class="text-center py-6 text-gray-500">No student data available. Please upload an Excel sheet or manually add students.</td></tr>`;
+                const colspanValue = 5 + (subjectsConfig.length * 2) + 2;
+                tableBody.innerHTML = `<tr><td colspan="${colspanValue}" class="text-center py-6 text-gray-500">No student data available. Please upload an Excel sheet or manually add students.</td></tr>`;
                 return;
             }
 
@@ -812,15 +1053,24 @@
 
                 let subjectCells = '';
                 subjectsConfig.forEach(sub => {
-                    const mark = student.marks[sub.key] !== undefined ? student.marks[sub.key] : 0; 
-                    const metrics = calculateMetrics({ ...student, marks: { ...student.marks, [sub.key]: mark } }).subjectMetrics[sub.key];
-                    
+                    const metrics = student.subjectMetrics[sub.key];
+                    const mark = metrics.mark;
                     const max = metrics.maxMarks;
                     const gradeClasses = getGradeColorClasses(metrics.color);
+                    const hasSubSubjects = sub.subSubjects && sub.subSubjects.length > 0;
                     
+                    const markInputHtml = hasSubSubjects
+                        ? `<span class="font-medium text-gray-900">${mark}</span>`
+                        : `<input type="number" min="0" max="${max}" class="table-input" value="${mark}" data-subject="${sub.key}">`;
+                    
+                    const inputTitle = hasSubSubjects
+                        ? 'To edit, click the student and update subsubject marks on the report card.'
+                        : `Enter mark out of ${max}.`;
+
                     subjectCells += `
-                        <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500 text-center border-l border-gray-100">
-                            <input type="number" min="0" max="${max}" class="table-input" value="${mark}" data-subject="${sub.key}">
+                        <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500 text-center border-l border-gray-100" title="${inputTitle}">
+                            ${markInputHtml}
+                            ${hasSubSubjects ? '<span class="text-xs text-indigo-500">(Breakdown)</span>' : ''}
                         </td>
                         <td class="px-2 py-3 whitespace-nowrap text-center">
                             <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${gradeClasses}">${metrics.grade}</span>
@@ -861,22 +1111,84 @@
 
         const handleMarkChange = (studentId, subjectKey, value) => {
             const student = studentsData.find(s => s.id === studentId);
-            const maxMark = subjectsConfig.find(s => s.key === subjectKey)?.maxMarks || 100;
-            
-            if (student) {
+            const subjectConfig = subjectsConfig.find(s => s.key === subjectKey);
+
+            if (student && subjectConfig && subjectConfig.subSubjects.length === 0) {
+                const maxMark = subjectConfig.maxMarks || 100;
                 let mark = parseInt(value, 10);
                 if (isNaN(mark)) mark = 0;
                 if (mark < 0) mark = 0;
                 if (mark > maxMark) mark = maxMark;
 
-                student.marks[subjectKey] = mark;
+                // Update flat mark
+                student.marks[subjectKey].mark = mark;
                 
+                // Update input value display
                 const inputElement = event.target;
                 inputElement.value = mark;
 
                 refreshAll();
             }
         };
+
+        const handleSubMarkChange = (studentId, subjectKey, subKey, value) => {
+            const student = studentsData.find(s => s.id === studentId);
+            const subjectConfig = subjectsConfig.find(s => s.key === subjectKey);
+            const subConfig = subjectConfig.subSubjects.find(s => s.key === subKey);
+
+            if (student && subConfig) {
+                const maxMark = subConfig.maxMarks;
+                let mark = parseInt(value, 10);
+                if (isNaN(mark)) mark = 0;
+                if (mark < 0) mark = 0;
+                if (mark > maxMark) mark = maxMark;
+
+                // Update nested submark
+                student.marks[subjectKey].subMarks[subKey] = mark;
+                
+                // Update the input value display
+                event.target.value = mark;
+
+                refreshAll();
+            }
+        };
+        
+        const renderSubsubjectDetails = (student, subjectMetrics) => {
+            const container = document.getElementById('subsubject-details-container');
+            let html = '';
+            
+            // Filter subjects that have subsubjects defined
+            const compositeSubjects = subjectsConfig.filter(sub => sub.subSubjects.length > 0);
+
+            if (compositeSubjects.length > 0) {
+                html += '<h3 class="text-lg font-semibold text-gray-800 mb-2">Detailed Subject Breakdown (Edit Marks Here)</h3>';
+                compositeSubjects.forEach(sub => {
+                    const metrics = subjectMetrics[sub.key];
+                    const studentMarkData = student.marks[sub.key] || { subMarks: {} };
+                    
+                    html += `<div class="p-4 border border-gray-200 rounded-lg mb-4 bg-gray-50">
+                        <h4 class="font-bold text-md text-indigo-700 mb-2">${sub.name} (Total: ${metrics.mark}/${metrics.maxMarks})</h4>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">`;
+
+                    sub.subSubjects.forEach(s => {
+                        const subMark = studentMarkData.subMarks[s.key] !== undefined ? studentMarkData.subMarks[s.key] : 0;
+                        html += `
+                            <div class="flex flex-col">
+                                <label class="text-xs font-medium text-gray-600">${s.name} (Max ${s.maxMarks})</label>
+                                <input type="number" min="0" max="${s.maxMarks}" value="${subMark}" class="table-input !w-full !py-1 !px-2 !text-left" data-subject-key="${sub.key}" data-sub-mark-key="${s.key}">
+                            </div>
+                        `;
+                    });
+
+                    html += `</div></div>`;
+                });
+            } else {
+                 html += '<p class="text-sm text-gray-500 italic">No subjects currently have an internal subsubject breakdown.</p>';
+            }
+
+            container.innerHTML = html;
+        };
+
 
         const renderProgressReport = (studentId) => {
             const studentsWithMetrics = calculateAllMetrics();
@@ -904,11 +1216,13 @@
 
             document.getElementById('report-student-name').textContent = student.name;
             document.getElementById('report-student-id').textContent = `ID: ${student.id}`;
-            document.getElementById('report-student-stream').textContent = `Stream: ${student.stream || DEFAULT_STREAM}`; // Display stream
+            document.getElementById('report-student-stream').textContent = `Stream: ${student.stream || DEFAULT_STREAM}`;
             document.getElementById('report-rank').textContent = `#${student.rank}`;
             document.getElementById('report-total').textContent = `${student.total}/${student.maxTotal}`;
             document.getElementById('report-percentage').textContent = `${(student.percentage * 100).toFixed(2)}%`;
             document.getElementById('report-grade').textContent = student.grade;
+
+            renderSubsubjectDetails(student, student.subjectMetrics);
 
             const chartData = {
                 labels: subjectsConfig.map(sub => sub.name),
@@ -993,8 +1307,13 @@
                 return;
             }
 
-            subjectsConfig.push({ key, name, maxMarks: 100 });
-            studentsData.forEach(student => student.marks[key] = 0);
+            const newSubject = { key, name, maxMarks: 100, subSubjects: [] };
+            subjectsConfig.push(newSubject);
+            
+            studentsData.forEach(student => {
+                 student.marks[key] = { mark: 0, subMarks: {} };
+            });
+            
             newSubjectNameInput.value = '';
             
             refreshAll();
@@ -1011,9 +1330,11 @@
                  reportPlaceholder.classList.remove('hidden');
                  reportContent.classList.add('hidden');
             }
+            saveState();
         };
 
         document.addEventListener('DOMContentLoaded', () => {
+            loadState();
             initializeListeners();
             refreshAll();
         });
@@ -1021,3 +1342,5 @@
     </script>
 </body>
 </html>
+
+
