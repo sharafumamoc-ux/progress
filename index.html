@@ -715,6 +715,8 @@
                             <input type="text" id="inst-name" placeholder="Institution Name" value="${appState.data.institution.name}" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
                             <input type="text" id="inst-address" placeholder="Institution Address" value="${appState.data.institution.address}" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
                             <input type="url" id="inst-logo-url" placeholder="Logo URL (Appears on reports)" value="${appState.data.institution.logoUrl}" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
+                            <!-- FIX: Added input for current Examination Name -->
+                            <input type="text" id="inst-examName" placeholder="Examination Name (e.g., Mid-Term 2025)" value="${appState.data.institution.examName}" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
                         </div>
                     </div>
 
@@ -1175,6 +1177,7 @@
             document.getElementById('inst-name')?.addEventListener('input', handleInstDetailChange);
             document.getElementById('inst-address')?.addEventListener('input', handleInstDetailChange);
             document.getElementById('inst-logo-url')?.addEventListener('input', handleInstDetailChange);
+            document.getElementById('inst-examName')?.addEventListener('input', handleInstDetailChange); // Listener for new exam name input
             document.getElementById('btn-add-subject')?.addEventListener('click', handleAddSubject);
             
             document.querySelectorAll('.remove-subject-btn').forEach(btn => btn.addEventListener('click', handleRemoveSubject));
