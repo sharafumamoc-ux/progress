@@ -81,13 +81,13 @@
                     <div class="overflow-x-auto border rounded-lg">
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-100 sticky top-0">
-                                <tr>
+                                <!-- The entire header row is now rebuilt by JavaScript for proper dynamic rendering -->
+                                <tr id="header-row-container">
                                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">Student Name</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">Stream</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[50px]">Action</th>
-                                    <!-- Dynamic Subject Headers -->
-                                    <tbody id="subject-headers"></tbody>
+                                    <!-- Dynamic Subject Headers will be injected here by JS -->
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">Total</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">Rank</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">Percent</th>
@@ -492,7 +492,7 @@
 
                 const createStudent = (base64) => {
                     const newStudent = {
-                        id: 'stu-' + Date.now(),
+                        id: 'stu-' + crypto.randomUUID(),
                         name: name,
                         stream: stream,
                         photoBase64: base64,
@@ -634,7 +634,6 @@
                 const totalPossible = window.appState.subjects.reduce((sum, sub) => sum + sub.outOf, 0);
 
                 window.appState.students.forEach(student => {
-                    let studentTotal = 0;
                     let studentTotalObtained = 0;
                     let hasValidMarks = false;
 
@@ -683,15 +682,31 @@
             // --- Render UI ---
 
             renderApp() {
-                // 1. Render Subject Headers
-                const headerHTML = window.appState.subjects.map(sub => `
+                // --- 1. Render Subject Headers (FIXED: Rebuilding the entire TR content for correct HTML structure) ---
+                const fixedHeadersStart = `
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">Student Name</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">Stream</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[50px]">Action</th>
+                `;
+
+                const dynamicHeaders = window.appState.subjects.map(sub => `
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px] whitespace-nowrap">
                         ${sub.name}<br/>(Out Of: ${sub.outOf})
                     </th>
                 `).join('');
-                document.getElementById('subject-headers').innerHTML = headerHTML;
+
+                const fixedHeadersEnd = `
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">Total</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">Rank</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">Percent</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">Report</th>
+                `;
                 
-                // 2. Render Student Rows
+                // Inject the reconstructed header row content
+                document.getElementById('header-row-container').innerHTML = fixedHeadersStart + dynamicHeaders + fixedHeadersEnd;
+                
+                // --- 2. Render Student Rows ---
                 const tbody = document.getElementById('students-table-body');
                 
                 if (window.appState.students.length === 0 && window.appState.subjects.length === 0) {
@@ -1030,7 +1045,6 @@
             async downloadAllReportsPDF() {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF('p', 'mm', 'a4');
-                const pageHeight = 297; 
                 let firstPage = true;
 
                 for (const student of window.appState.students) {
@@ -1083,6 +1097,7 @@
     </script>
 </body>
 </html>
+
 
 
 
