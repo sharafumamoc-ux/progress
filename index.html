@@ -500,8 +500,11 @@
 
                 return `
                     <tr class="hover:bg-gray-50/50 transition-colors">
-                        <td class="px-3 py-2 text-sm font-semibold text-gray-900">
-                            ${student.name} <span class="block text-xs font-normal text-gray-500">(${student.stream})</span>
+                        <td class="px-3 py-2 text-sm font-semibold text-gray-900 flex justify-between items-center">
+                            <span>${student.name} <span class="block text-xs font-normal text-gray-500">(${student.stream})</span></span>
+                            <button data-student-id="${student.id}" class="text-xs px-2 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors delete-student-btn">
+                                Delete
+                            </button>
                         </td>
                         ${subjectInputs}
                     </tr>
@@ -1091,6 +1094,20 @@
             saveData({ subjects: updatedSubjects });
         };
 
+        /** NEW: Handles student deletion */
+        const handleDeleteStudent = (e) => {
+            const studentId = e.target.dataset.studentId;
+            
+            // In a real application, this would be a custom modal confirmation.
+            // Simulating approval for demonstration:
+            console.log(`Confirmation: Deleting student ID: ${studentId}.`);
+
+            const updatedStudents = appState.data.students.filter(s => s.id !== studentId);
+            
+            // Recalculate ranks and save the new list
+            saveData({ students: updatedStudents });
+        };
+
 
         const handleInstDetailChange = (e) => {
             const key = e.target.id.replace('inst-', '');
@@ -1313,6 +1330,12 @@
                     setActiveTab('reports');
                 });
             });
+            
+            // NEW: Student Delete Button
+            document.querySelectorAll('.delete-student-btn').forEach(button => {
+                button.addEventListener('click', handleDeleteStudent);
+            });
+
 
             // --- Reports Tab ---
             document.getElementById('student-selector')?.addEventListener('change', handleStudentSelectorChange);
