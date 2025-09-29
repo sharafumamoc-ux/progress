@@ -32,7 +32,7 @@
         // --- GLOBAL APP STATE AND FIREBASE SETUP ---
         const INITIAL_DATA = {
             institution: {
-                name: 'The Elite Academy',
+                name: 'IFER Academy',
                 address: '123 Academic Way, Education City',
                 logoUrl: 'https://placehold.co/100x40/4F46E5/ffffff?text=LOGO',
                 examName: 'Annual Examinations 2024',
@@ -80,13 +80,15 @@
 
         // --- IMPORTANT: REPLACE THIS CONFIGURATION IF RUNNING OUTSIDE OF CANVAS ---
         // You MUST replace the contents of this object with your actual Firebase Web App Configuration.
+        // Example: { apiKey: "AIzaSy...", projectId: "your-project-id", ... }
+        // FIX: Replaced malformed script block with the correct JSON configuration object.
         const USER_PROVIDED_FIREBASE_CONFIG = {
-            // apiKey: "YOUR_API_KEY",
-            // authDomain: "YOUR_AUTH_DOMAIN",
-            // projectId: "YOUR_PROJECT_ID", // REQUIRED for Firestore
-            // storageBucket: "YOUR_STORAGE_BUCKET",
-            // messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-            // appId: "YOUR_APP_ID"
+            apiKey: "AIzaSyAzK0sYcdEwDNqKqJ5WMBFVG9H6nsC5Q-s",
+            authDomain: "progress-report-95bf0.firebaseapp.com",
+            projectId: "progress-report-95bf0",
+            storageBucket: "progress-report-95bf0.firebasestorage.app",
+            messagingSenderId: "364212836993",
+            appId: "1:364212836993:web:af3b656c5c53659d028b80"
         };
         // -------------------------------------------------------------------------
         
@@ -1438,29 +1440,5 @@
             </div>
         </main>
     </div>
-    <script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
-
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyAzK0sYcdEwDNqKqJ5WMBFVG9H6nsC5Q-s",
-    authDomain: "progress-report-95bf0.firebaseapp.com",
-    projectId: "progress-report-95bf0",
-    storageBucket: "progress-report-95bf0.firebasestorage.app",
-    messagingSenderId: "364212836993",
-    appId: "1:364212836993:web:dc6ca5a68102f2c6028b80",
-    measurementId: "G-0J5KZ557HS"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-</script>
 </body>
 </html>
-
