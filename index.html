@@ -681,9 +681,19 @@
         const renderSettingsTab = () => {
             const subjectListHtml = appState.data.subjects.map(s => {
                 const subSubjectList = s.subSubjects.map(ss => `
-                    <div class="flex justify-between items-center text-sm ml-4 bg-gray-50 p-2 rounded-md">
-                        <span class="font-mono">${ss.name} (/ ${ss.maxMark})</span>
-                        <button data-subject-id="${s.id}" data-subsubject-name="${ss.name}" class="text-xs text-red-400 hover:text-red-600 transition-colors remove-subsubject-btn">Remove</button>
+                    <div class="flex justify-between items-center text-sm ml-4 bg-gray-50 p-2 rounded-md shadow-inner">
+                        <div class="flex items-center space-x-2 flex-grow">
+                            <input type="text" 
+                                data-parent-id="${s.id}" data-original-name="${ss.name}" data-field="name"
+                                value="${ss.name}" placeholder="Sub-subject Name"
+                                class="w-1/2 p-1 border border-gray-300 rounded-md text-sm subsubject-detail-input font-medium"/>
+                            <span class="text-gray-500">Max:</span>
+                            <input type="number" min="1" 
+                                data-parent-id="${s.id}" data-original-name="${ss.name}" data-field="maxMark"
+                                value="${ss.maxMark}"
+                                class="w-20 p-1 border border-gray-300 rounded-md text-center text-sm subsubject-detail-input"/>
+                        </div>
+                        <button data-subject-id="${s.id}" data-subsubject-name="${ss.name}" class="text-xs px-3 py-1 bg-red-100 text-red-600 rounded-full hover:bg-red-200 transition-colors remove-subsubject-btn">Remove</button>
                     </div>
                 `).join('');
                 
@@ -822,6 +832,7 @@
                 name: name,
                 stream: streamSelect.value,
                 photoUrl: photoData, // Use converted Base64 data or provided URL
+                marks: {},
                 total: 0,
                 percentage: '0.00',
                 rank: appState.data.students.length + 1,
@@ -977,6 +988,46 @@
             });
             saveData({ subjects: newSubjects });
         };
+        
+        /** NEW: Handles changes to sub-subject name or max mark */
+        const handleSubSubjectDetailChange = (e) => {
+            const parentId = e.target.dataset.parentId;
+            const originalName = e.target.dataset.originalName;
+            const field = e.target.dataset.field;
+            let value = e.target.value;
+            
+            if (field === 'maxMark') {
+                value = Math.max(1, parseInt(value) || 1);
+                e.target.value = value; 
+            } else if (field === 'name') {
+                value = value.trim();
+            }
+
+            const updatedSubjects = appState.data.subjects.map(s => {
+                if (s.id === parentId) {
+                    const newSubSubjects = s.subSubjects.map(ss => {
+                        if (ss.name === originalName) {
+                            // Update the specific field
+                            return { 
+                                ...ss, 
+                                [field]: field === 'maxMark' ? value : value // Use value (string) for name, value (number) for maxMark
+                            };
+                        }
+                        return ss;
+                    });
+                    
+                    // Recalculate parent max mark based on the updated sub-subjects
+                    const newMaxMark = newSubSubjects.reduce((sum, ss) => sum + ss.maxMark, 0);
+                    
+                    return { ...s, subSubjects: newSubSubjects, maxMark: newMaxMark, isComposite: true };
+                }
+                return s;
+            });
+            
+            // saveData triggers a full re-render, updating data-original-name attribute if the name was changed.
+            saveData({ subjects: updatedSubjects });
+        };
+
 
         const handleInstDetailChange = (e) => {
             const key = e.target.id.replace('inst-', '');
@@ -1215,9 +1266,14 @@
             document.querySelectorAll('.add-subsubject-btn').forEach(btn => btn.addEventListener('click', handleAddSubSubject));
             document.querySelectorAll('.remove-subsubject-btn').forEach(btn => btn.addEventListener('click', handleRemoveSubSubject));
             
-            // New: Max Mark Change Handler
+            // Max Mark Change Handler for simple subjects
             document.querySelectorAll('.subject-max-mark-input').forEach(input => {
                 input.addEventListener('input', handleSubjectMaxMarkChange);
+            });
+            
+            // NEW: Sub-subject detail change handler (name or mark)
+            document.querySelectorAll('.subsubject-detail-input').forEach(input => {
+                input.addEventListener('input', handleSubSubjectDetailChange);
             });
         };
 
