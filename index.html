@@ -1,909 +1,1193 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
-import { Upload, Book, Trash2, Download, Award, User, X, Home } from 'lucide-react';
-
-// --- Global Constants and Utilities ---
-const LOGO_URL = 'uploaded:image_0e42ef.jpg-32cc7d4d-3b22-40e9-9324-d4ffe0ff3fd3';
-const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const FIREBASE_CONFIG = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-const AUTH_TOKEN = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-const MAIN_DOCUMENT_PATH = `artifacts/${APP_ID}/public/data/grade_sheets/main_sheet`;
-
-// Grade configuration
-const GRADE_THRESHOLDS = [
-    { min: 90, grade: 'A+', color: 'text-green-600', bg: 'bg-green-50' },
-    { min: 80, grade: 'A', color: 'text-gray-800', bg: 'bg-white' },
-    { min: 70, grade: 'B+', color: 'text-gray-800', bg: 'bg-white' },
-    { min: 60, grade: 'B', color: 'text-gray-800', bg: 'bg-white' },
-    { min: 50, grade: 'C+', color: 'text-gray-800', bg: 'bg-white' },
-    { min: 40, grade: 'C', color: 'text-gray-800', bg: 'bg-white' },
-    { min: 30, grade: 'D+', color: 'text-gray-800', bg: 'bg-white' },
-    { min: 0, grade: 'F', color: 'text-red-600', bg: 'bg-red-50' },
-];
-
-/**
- * Calculates the grade and applies color based on the percentage score.
- */
-const calculateGrade = (score, maxMarks) => {
-    if (maxMarks === 0) return { grade: '-', color: 'text-gray-500', bg: 'bg-gray-100' };
-    const percentage = (score / maxMarks) * 100;
-    const { grade, color, bg } = GRADE_THRESHOLDS.find(t => percentage >= t.min) || GRADE_THRESHOLDS[GRADE_THRESHOLDS.length - 1];
-    return { grade, color, bg };
-};
-
-// --- Initial Data Structure ---
-const initialData = {
-    institution: {
-        name: 'Ifer Academy',
-        logoUrl: LOGO_URL,
-        address: 'Better Education Better Society',
-    },
-    examName: 'Annual Examination 2025',
-    subjects: [
-        { id: 'math', name: 'Mathematics', maxMarks: 100, subSubjects: [] },
-        { id: 'phy', name: 'Physics', maxMarks: 70, subSubjects: [{ name: 'Theory', maxMarks: 50 }, { name: 'Practical', maxMarks: 20 }] },
-        { id: 'chem', name: 'Chemistry', maxMarks: 100, subSubjects: [] },
-    ],
-    students: [
-        // Example student data structure
-        {
-            id: crypto.randomUUID(),
-            name: 'Akash K.',
-            stream: 'Biology Science',
-            photoUrl: '',
-            marks: {
-                math: { score: 95, subScores: {} },
-                phy: { score: 65, subScores: { 'Theory': 48, 'Practical': 17 } },
-                chem: { score: 82, subScores: {} },
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Mark Sheet & Reporting System</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Base styles */
+        body { font-family: 'Inter', sans-serif; }
+        /* Custom print styles for PDF reports */
+        @media print {
+            .no-print { display: none !important; }
+            #main-content { padding: 0 !important; }
+            #progress-report-print {
+                width: 8.5in;
+                min-height: 11in;
+                margin: 0;
+                padding: 0.5in;
+                box-shadow: none;
+                border: none;
             }
-        },
-    ],
-};
-
-// --- Main App Component ---
-export default function App() {
-    const [data, setData] = useState(initialData);
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
-    const [view, setView] = useState('sheet'); // 'sheet', 'config', 'report'
-    const [selectedStudentId, setSelectedStudentId] = useState(null);
-    const [message, setMessage] = useState('');
-
-    // --- Firebase Initialization and Data Sync ---
-    useEffect(() => {
-        if (Object.keys(FIREBASE_CONFIG).length === 0) {
-            console.error("Firebase config is missing.");
-            setIsLoading(false);
-            return;
         }
+    </style>
+    <!-- Load Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- GLOBAL APP STATE AND FIREBASE SETUP ---
+        const INITIAL_DATA = {
+            institution: {
+                name: 'The Elite Academy',
+                address: '123 Academic Way, Education City',
+                logoUrl: 'https://placehold.co/100x40/4F46E5/ffffff?text=LOGO',
+                examName: 'Annual Examinations 2024',
+            },
+            subjects: [
+                { id: 'sub-math', name: 'Mathematics', maxMark: 100, isComposite: false, subSubjects: [] },
+                { id: 'sub-phy', name: 'Physics', maxMark: 70, isComposite: false, subSubjects: [] },
+                { id: 'sub-chem', name: 'Chemistry', maxMark: 70, isComposite: false, subSubjects: [] },
+            ],
+            students: [],
+            nextStudentId: 1,
+        };
 
-        try {
-            const app = initializeApp(FIREBASE_CONFIG);
-            const firestoreDb = getFirestore(app);
-            const firebaseAuth = getAuth(app);
-            setDb(firestoreDb);
-            setAuth(firebaseAuth);
+        const GRADE_SCALE = [
+            { threshold: 90, grade: 'A+', color: 'text-green-600', bgColor: 'bg-green-100' },
+            { threshold: 80, grade: 'A', color: 'text-gray-900', bgColor: 'bg-gray-100' },
+            { threshold: 70, grade: 'B+', color: 'text-gray-900', bgColor: 'bg-gray-100' },
+            { threshold: 60, grade: 'B', color: 'text-gray-900', bgColor: 'bg-gray-100' },
+            { threshold: 50, grade: 'C+', color: 'text-gray-900', bgColor: 'bg-gray-100' },
+            { threshold: 40, grade: 'C', color: 'text-gray-900', bgColor: 'bg-gray-100' },
+            { threshold: 30, grade: 'D+', color: 'text-gray-900', bgColor: 'bg-gray-100' },
+            { threshold: 0, grade: 'F', color: 'text-red-600', bgColor: 'bg-red-100' },
+        ];
 
-            // 1. Authenticate (initial auth token or anonymous)
-            const signIn = async () => {
+        let appState = {
+            data: INITIAL_DATA,
+            rankedStudents: [],
+            activeTab: 'marksheet', // 'marksheet', 'reports', 'settings'
+            selectedStudentId: null,
+            uploadMessage: '',
+            isAuthReady: false,
+            userId: null,
+            db: null,
+            auth: null,
+            currentExamId: 'default-exam',
+            examList: [],
+        };
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        /** Utility: Grade Calculation */
+        const calculateGrade = (score, maxMark) => {
+            if (maxMark === 0) return { grade: 'N/A', color: 'text-gray-400', bgColor: 'bg-gray-50', percentage: '0.00' };
+            const percentage = (score / maxMark) * 100;
+            for (const scale of GRADE_SCALE) {
+                if (percentage >= scale.threshold) {
+                    return { grade: scale.grade, color: scale.color, bgColor: scale.bgColor, percentage: percentage.toFixed(2) };
+                }
+            }
+            return { grade: 'F', color: 'text-red-600', bgColor: 'bg-red-100', percentage: percentage.toFixed(2) };
+        };
+
+        /** Utility: Ranking and Calculation Logic */
+        const rankAndCalculate = (students, subjects) => {
+            const totalMaxMark = subjects.reduce((sum, s) => sum + s.maxMark, 0);
+
+            const calculatedStudents = students.map(student => {
+                let studentTotalScore = 0;
+                
+                // Calculate subject scores/grades
+                const newMarks = {};
+                subjects.forEach(subject => {
+                    let score = student.marks[subject.id]?.score || 0;
+                    let subjectMaxMark = subject.maxMark;
+
+                    // If composite, recalculate score from sub-subjects
+                    if (subject.isComposite && subject.subSubjects.length > 0) {
+                        score = subject.subSubjects.reduce((sum, ss) => sum + (student.marks[subject.id]?.subMarks?.[ss.name] || 0), 0);
+                        subjectMaxMark = subject.subSubjects.reduce((sum, ss) => sum + ss.maxMark, 0);
+                    }
+                    
+                    studentTotalScore += score;
+                    newMarks[subject.id] = {
+                        ...student.marks[subject.id],
+                        score: score,
+                        ...calculateGrade(score, subjectMaxMark),
+                        maxMark: subjectMaxMark
+                    };
+                });
+
+                const studentPercentage = totalMaxMark > 0 ? (studentTotalScore / totalMaxMark) * 100 : 0;
+
+                return {
+                    ...student,
+                    marks: newMarks,
+                    total: studentTotalScore,
+                    percentage: studentPercentage.toFixed(2),
+                    totalMaxMark: totalMaxMark,
+                };
+            });
+
+            // Sort and Rank
+            calculatedStudents.sort((a, b) => b.total - a.total);
+            let currentRank = 1;
+            for (let i = 0; i < calculatedStudents.length; i++) {
+                if (i > 0 && calculatedStudents[i].total < calculatedStudents[i - 1].total) {
+                    currentRank = i + 1;
+                }
+                calculatedStudents[i].rank = currentRank;
+            }
+
+            return calculatedStudents;
+        };
+
+        /** Database: Save data to Firestore */
+        const saveData = async (updates, refreshUI = true) => {
+            // 1. Update State Optimistically
+            const newData = { ...appState.data, ...updates };
+            newData.students = rankAndCalculate(newData.students, newData.subjects);
+            appState.data = newData;
+            appState.rankedStudents = newData.students;
+            if (refreshUI) render();
+
+            // 2. Persist to Firestore
+            if (appState.db && appState.userId && appState.isAuthReady) {
                 try {
-                    if (AUTH_TOKEN) {
-                        await signInWithCustomToken(firebaseAuth, AUTH_TOKEN);
-                    } else {
-                        await signInAnonymously(firebaseAuth);
-                    }
-                } catch (error) {
-                    console.error("Firebase Authentication failed:", error);
-                    // Fallback to anonymous sign-in if custom token fails
-                    await signInAnonymously(firebaseAuth).catch(err => console.error("Anonymous sign-in failed:", err));
+                    const docRef = doc(appState.db, `/artifacts/${appId}/users/${appState.userId}/mark_sheets`, appState.currentExamId);
+                    await setDoc(docRef, newData, { merge: true });
+                    console.log("Data saved successfully!");
+                } catch (e) {
+                    console.error("Error saving document: ", e);
                 }
-            };
-            signIn();
+            }
+        };
 
-            // 2. Auth State Listener
-            onAuthStateChanged(firebaseAuth, (user) => {
-                const currentUserId = user?.uid || crypto.randomUUID();
-                setUserId(currentUserId);
-                setIsAuthReady(true);
-            });
+        /** Database: Switch Exam */
+        window.switchExam = (examId) => {
+            appState.currentExamId = examId;
+            // The onSnapshot listener will automatically load the new data
+            if (appState.db && appState.userId) {
+                attachDataListener();
+            } else {
+                 appState.data = INITIAL_DATA;
+                 render();
+            }
+        };
 
-        } catch (error) {
-            console.error("Firebase initialization failed:", error);
-            setIsLoading(false);
-        }
-    }, []);
+        /** Database: Attach Real-Time Listener */
+        const attachDataListener = () => {
+            if (!appState.db || !appState.userId) return;
 
-    // 3. Data Sync Listener (onSnapshot)
-    useEffect(() => {
-        if (db && isAuthReady) {
-            const docRef = doc(db, MAIN_DOCUMENT_PATH);
+            const dataDocRef = doc(appState.db, `/artifacts/${appId}/users/${appState.userId}/mark_sheets`, appState.currentExamId);
+            const examsDocRef = doc(appState.db, `/artifacts/${appId}/users/${appState.userId}/mark_sheets`, 'exam_list');
 
-            const unsubscribe = onSnapshot(docRef, (docSnapshot) => {
-                if (docSnapshot.exists()) {
-                    const savedData = docSnapshot.data();
-                    setData(prev => ({ ...prev, ...savedData }));
-                    console.log("Data loaded from Firestore.");
+            // Listen to data changes for the current exam
+            onSnapshot(dataDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const loadedData = docSnap.data();
+                    const mergedData = { 
+                        ...INITIAL_DATA, 
+                        ...loadedData, 
+                        institution: { ...INITIAL_DATA.institution, ...loadedData.institution } 
+                    };
+                    appState.data = mergedData;
+                    appState.rankedStudents = rankAndCalculate(mergedData.students, mergedData.subjects);
+                    render();
+                    console.log(`Data loaded for exam: ${appState.currentExamId}`);
                 } else {
-                    console.log("No data found, using initial state.");
+                    appState.data = INITIAL_DATA;
+                    appState.data.institution.examName = appState.examList.find(e => e.id === appState.currentExamId)?.name || 'New Examination';
+                    appState.rankedStudents = [];
+                    render();
+                    console.log(`No data found for exam ID: ${appState.currentExamId}. Initializing.`);
                 }
-                setIsLoading(false);
-            }, (error) => {
-                console.error("Error reading Firestore data:", error);
-                setIsLoading(false);
-            });
+            }, (error) => console.error("Error listening to data:", error));
 
-            return () => unsubscribe();
-        }
-    }, [db, isAuthReady]);
 
-    // --- Data Persistence ---
-    const saveData = useCallback(async (currentData) => {
-        if (!db) {
-            console.warn("Database not ready.");
-            return;
-        }
-        try {
-            const docRef = doc(db, MAIN_DOCUMENT_PATH);
-            await setDoc(docRef, currentData, { merge: true });
-            setMessage('Data saved successfully!');
-            setTimeout(() => setMessage(''), 3000);
-        } catch (error) {
-            console.error("Error saving data to Firestore:", error);
-            setMessage('Error saving data!');
-            setTimeout(() => setMessage(''), 3000);
-        }
-    }, [db]);
-
-    // Use a throttle or debounce in a real app, but for this context, save on every significant change
-    const updateData = useCallback((newData) => {
-        setData(newData);
-        saveData(newData);
-    }, [saveData]);
-
-    // --- Core Logic: Calculation & Ranking ---
-    const processedStudents = useMemo(() => {
-        if (!data.students || data.students.length === 0) return [];
-
-        const studentsWithTotals = data.students.map(student => {
-            let totalScore = 0;
-            let totalMaxMarks = 0;
-
-            // Calculate total score and max marks across all configured subjects
-            data.subjects.forEach(subject => {
-                const studentMark = student.marks[subject.id];
-                if (studentMark && studentMark.score !== undefined && studentMark.score !== null) {
-                    totalScore += studentMark.score;
-                    totalMaxMarks += subject.maxMarks;
+            // Listen to exam list changes
+            onSnapshot(examsDocRef, (docSnap) => {
+                if (docSnap.exists() && docSnap.data().exams) {
+                    appState.examList = docSnap.data().exams;
+                    renderSidebar();
+                } else {
+                    appState.examList = [];
+                    // Ensure a default exam exists if list is empty
+                    if (!appState.examList.some(e => e.id === 'default-exam')) {
+                       appState.examList.push({ id: 'default-exam', name: 'Default Exam' });
+                    }
+                    renderSidebar();
                 }
-            });
-
-            const percentage = totalMaxMarks > 0 ? (totalScore / totalMaxMarks) * 100 : 0;
-
-            return {
-                ...student,
-                totalScore,
-                totalMaxMarks,
-                percentage: parseFloat(percentage.toFixed(2)),
-            };
-        });
-
-        // 2. Rank calculation (Overall Rank based on total score)
-        const sortedStudents = studentsWithTotals
-            .sort((a, b) => b.totalScore - a.totalScore) // Sort descending by total score
-            .map((student, index) => ({
-                ...student,
-                rank: index + 1
-            }));
-
-        return sortedStudents;
-    }, [data.students, data.subjects]);
-
-    // --- Handlers for Configuration ---
-
-    const handleInstDetailsChange = (key, value) => {
-        const newData = { ...data, institution: { ...data.institution, [key]: value } };
-        updateData(newData);
-    };
-
-    const handleSubjectChange = (id, key, value) => {
-        const updatedSubjects = data.subjects.map(sub =>
-            sub.id === id ? { ...sub, [key]: key === 'maxMarks' ? parseInt(value) || 0 : value } : sub
-        );
-        updateData({ ...data, subjects: updatedSubjects });
-    };
-
-    const addSubject = () => {
-        const newId = crypto.randomUUID().slice(0, 8);
-        const newSubject = { id: newId, name: `New Subject ${data.subjects.length + 1}`, maxMarks: 100, subSubjects: [] };
-        updateData({ ...data, subjects: [...data.subjects, newSubject] });
-    };
-
-    const removeSubject = (id) => {
-        const updatedSubjects = data.subjects.filter(sub => sub.id !== id);
-        // Also remove marks for this subject from all students
-        const updatedStudents = data.students.map(student => {
-            const { [id]: _, ...restMarks } = student.marks;
-            return { ...student, marks: restMarks };
-        });
-        updateData({ ...data, subjects: updatedSubjects, students: updatedStudents });
-    };
-
-    // Sub-subject handlers (simplified)
-    const addSubSubject = (subjectId) => {
-        const updatedSubjects = data.subjects.map(sub => {
-            if (sub.id === subjectId) {
-                const newSub = { name: `Sub-Topic ${sub.subSubjects.length + 1}`, maxMarks: 50 };
-                return { ...sub, subSubjects: [...sub.subSubjects, newSub] };
-            }
-            return sub;
-        });
-        updateData({ ...data, subjects: updatedSubjects });
-    };
-
-    const removeSubSubject = (subjectId, subName) => {
-        const updatedSubjects = data.subjects.map(sub => {
-            if (sub.id === subjectId) {
-                return { ...sub, subSubjects: sub.subSubjects.filter(ss => ss.name !== subName) };
-            }
-            return sub;
-        });
-        updateData({ ...data, subjects: updatedSubjects });
-    };
-
-    // --- Handlers for Student Data ---
-
-    const addStudent = () => {
-        const newId = crypto.randomUUID();
-        const newStudent = {
-            id: newId,
-            name: `New Student ${data.students.length + 1}`,
-            stream: 'Computer Science',
-            photoUrl: '',
-            marks: data.subjects.reduce((acc, sub) => ({
-                ...acc,
-                [sub.id]: { score: null, subScores: {} }
-            }), {})
+            }, (error) => console.error("Error listening to exam list:", error));
         };
-        updateData({ ...data, students: [...data.students, newStudent] });
-    };
-
-    const removeStudent = (id) => {
-        const updatedStudents = data.students.filter(s => s.id !== id);
-        updateData({ ...data, students: updatedStudents });
-    };
-
-    const handleMarkChange = (studentId, subjectId, value) => {
-        const score = parseInt(value) || null;
-        const updatedStudents = data.students.map(student => {
-            if (student.id === studentId) {
-                return {
-                    ...student,
-                    marks: {
-                        ...student.marks,
-                        [subjectId]: {
-                            ...student.marks[subjectId],
-                            score: score
-                        }
-                    }
-                };
-            }
-            return student;
-        });
-        updateData({ ...data, students: updatedStudents });
-    };
-
-    const handleSubMarkChange = (studentId, subjectId, subName, value) => {
-        const subScore = parseInt(value) || null;
-        const updatedStudents = data.students.map(student => {
-            if (student.id === studentId) {
-                const currentSubject = student.marks[subjectId] || { score: null, subScores: {} };
-                const updatedSubScores = { ...currentSubject.subScores, [subName]: subScore };
-
-                // Calculate total score from sub-scores
-                const totalScore = Object.values(updatedSubScores).reduce((sum, s) => sum + (s || 0), 0);
-
-                return {
-                    ...student,
-                    marks: {
-                        ...student.marks,
-                        [subjectId]: {
-                            score: totalScore, // Auto-update total score
-                            subScores: updatedSubScores
-                        }
-                    }
-                };
-            }
-            return student;
-        });
-        updateData({ ...data, students: updatedStudents });
-    };
-
-    // Photo/Stream/Name Update
-    const handleStudentDetailsChange = (studentId, key, value) => {
-        const updatedStudents = data.students.map(student => {
-            if (student.id === studentId) {
-                return { ...student, [key]: value };
-            }
-            return student;
-        });
-        updateData({ ...data, students: updatedStudents });
-    };
-
-    const uploadStudentPhoto = (studentId, file) => {
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            handleStudentDetailsChange(studentId, 'photoUrl', reader.result);
-        };
-        reader.readAsDataURL(file);
-    };
-
-    // --- Excel Upload Handler (Simplified) ---
-    const handleExcelUpload = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        if (typeof window.XLSX === 'undefined') {
-            alert('Excel parser library (XLSX) is not loaded. Please ensure the environment supports external scripts.');
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const bstr = e.target.result;
-            const workbook = window.XLSX.read(bstr, { type: 'binary' });
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            const json = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-            if (json.length < 2) return;
-
-            const header = json[0].map(h => String(h).trim());
-            const rows = json.slice(1);
-
-            const nameIndex = header.findIndex(h => h.toLowerCase() === 'name');
-            const streamIndex = header.findIndex(h => h.toLowerCase() === 'stream');
-
-            if (nameIndex === -1) {
-                alert("Excel must contain a column titled 'Name'.");
+        
+        /** Database: Initialize Firebase */
+        const initializeFirebase = async () => {
+            if (Object.keys(firebaseConfig).length === 0 || !firebaseConfig.projectId) {
+                console.error("Firebase config is missing or invalid. Data persistence disabled.");
+                appState.isAuthReady = true;
+                appState.userId = crypto.randomUUID(); // Fallback for local testing
+                render();
                 return;
             }
 
-            const newStudents = rows.map(row => {
-                const studentId = crypto.randomUUID();
-                const studentName = row[nameIndex] || `Unnamed Student ${studentId.slice(0, 4)}`;
-                const studentStream = streamIndex !== -1 ? row[streamIndex] : 'Computer Science';
-                let studentMarks = {};
+            try {
+                const app = initializeApp(firebaseConfig);
+                appState.db = getFirestore(app);
+                appState.auth = getAuth(app);
 
-                data.subjects.forEach(subject => {
-                    const subjectIndex = header.findIndex(h => h.toLowerCase() === subject.name.toLowerCase());
-                    let score = null;
-                    if (subjectIndex !== -1) {
-                        const rawScore = parseFloat(row[subjectIndex]);
-                        score = isNaN(rawScore) ? null : rawScore;
+                onAuthStateChanged(appState.auth, async (user) => {
+                    if (user) {
+                        appState.userId = user.uid;
+                    } else {
+                        // Use custom token if available, otherwise sign in anonymously
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(appState.auth, initialAuthToken).catch(err => {
+                                console.error("Custom token sign-in failed:", err);
+                                signInAnonymously(appState.auth);
+                            });
+                        } else {
+                            await signInAnonymously(appState.auth);
+                        }
                     }
-                    studentMarks[subject.id] = { score: score, subScores: {} };
+                    appState.isAuthReady = true;
+                    attachDataListener();
                 });
-
-                return {
-                    id: studentId,
-                    name: studentName,
-                    stream: studentStream,
-                    photoUrl: '',
-                    marks: studentMarks
-                };
-            });
-
-            updateData({ ...data, students: newStudents });
-            alert(`Successfully imported ${newStudents.length} students. Ensure Max Marks are configured.`);
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                appState.isAuthReady = true;
+                appState.userId = crypto.randomUUID();
+                render();
+            }
         };
-        reader.readAsBinaryString(file);
-    };
 
-    // --- Download Handlers (PDF & Excel) ---
 
-    // A utility function to convert a DOM element to PDF
-    const downloadPDF = (elementId, filename) => {
-        if (typeof window.html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
-            alert('PDF generation libraries (html2canvas/jspdf) are not loaded. Download will not work.');
-            return;
-        }
-        const input = document.getElementById(elementId);
-        if (!input) {
-            console.error(`Element with id ${elementId} not found.`);
-            return;
-        }
+        // --- UI RENDER FUNCTIONS ---
 
-        window.html2canvas(input, { scale: 2 }).then((canvas) => {
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
-            const imgProps = pdf.getImageProperties(imgData);
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        /** Global UI render function */
+        const render = () => {
+            if (!appState.isAuthReady) {
+                document.getElementById('loading-screen').classList.remove('hidden');
+                document.getElementById('app-container').classList.add('hidden');
+                return;
+            }
 
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-            pdf.save(filename);
-        });
-    };
+            document.getElementById('loading-screen').classList.add('hidden');
+            document.getElementById('app-container').classList.remove('hidden');
 
-    const downloadFullExcel = () => {
-        if (typeof window.XLSX === 'undefined') {
-            alert('Excel parser library (XLSX) is not loaded. Download will not work.');
-            return;
-        }
+            renderSidebar();
+            
+            const mainContent = document.getElementById('main-content-area');
+            mainContent.innerHTML = ''; // Clear previous content
 
-        const wsData = [
-            ['INSTITUTION:', data.institution.name, 'EXAMINATION:', data.examName],
-            ['', '', '', ''],
-            ['RANK', 'NAME', 'STREAM', ...data.subjects.map(s => s.name), 'TOTAL SCORE', 'TOTAL MAX', 'PERCENTAGE']
-        ];
+            switch (appState.activeTab) {
+                case 'marksheet':
+                    mainContent.innerHTML = renderMarksheetTab();
+                    break;
+                case 'reports':
+                    mainContent.innerHTML = renderReportsTab();
+                    break;
+                case 'settings':
+                    mainContent.innerHTML = renderSettingsTab();
+                    break;
+            }
+            // Reattach all specific event listeners after DOM update
+            attachEventListeners();
+        };
 
-        processedStudents.forEach(s => {
-            const studentRow = [
-                s.rank,
-                s.name,
-                s.stream,
-                ...data.subjects.map(sub => s.marks[sub.id]?.score ?? ''),
-                s.totalScore,
-                s.totalMaxMarks,
-                s.percentage + '%'
-            ];
-            wsData.push(studentRow);
-        });
+        const setActiveTab = (tab) => {
+            appState.activeTab = tab;
+            render();
+        };
 
-        const ws = window.XLSX.utils.aoa_to_sheet(wsData);
-        const wb = window.XLSX.utils.book_new();
-        window.XLSX.utils.book_append_sheet(wb, ws, "Grade Sheet");
-        window.XLSX.writeFile(wb, `${data.examName}_Grade_Sheet.xlsx`);
-    };
+        const renderSidebar = () => {
+            const sidebar = document.getElementById('sidebar-menu');
+            if (!sidebar) return;
 
-    const downloadIndividualReportPDF = (student) => {
-        setSelectedStudentId(student.id);
-        setView('report');
-        setTimeout(() => { // Wait for the modal/view to render
-            downloadPDF('individual-report-container', `${student.name}_${data.examName}_Report.pdf`);
-            setView('sheet');
-            setSelectedStudentId(null);
-        }, 100);
-    };
-
-    // --- Loading State UI ---
-    if (isLoading) {
-        return (
-            <div className="flex items-center justify-center min-h-screen bg-gray-100">
-                <div className="text-xl font-semibold text-blue-600">Loading data and connecting to server...</div>
-            </div>
-        );
-    }
-
-    // --- View Components ---
-
-    const ReportModal = ({ student }) => {
-        if (!student) return null;
-
-        const { totalScore, totalMaxMarks, percentage, rank } = student;
-        const overallGrade = calculateGrade(totalScore, totalMaxMarks);
-
-        return (
-            <div className="fixed inset-0 z-50 overflow-y-auto bg-gray-900 bg-opacity-75 flex items-center justify-center p-4">
-                <div id="individual-report-container" className="bg-white rounded-lg shadow-2xl w-full max-w-3xl p-8 transform transition-all duration-300 relative">
-                    <button
-                        className="absolute top-4 right-4 text-gray-500 hover:text-gray-900"
-                        onClick={() => { setView('sheet'); setSelectedStudentId(null); }}
-                    >
-                        <X size={24} />
+            // Navigation
+            let navHtml = ['Marksheet', 'Reports', 'Settings'].map(name => {
+                const tab = name.toLowerCase().replace(' ', '');
+                const isActive = appState.activeTab === tab;
+                return `
+                    <button onclick="setActiveTab('${tab}')" class="w-full text-left p-3 rounded-lg font-medium transition-colors ${
+                        isActive ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-700 hover:bg-gray-200'
+                    }">
+                        ${name}
                     </button>
+                `;
+            }).join('');
+            
+            // Exam Selector
+            const examOptionsHtml = appState.examList.map(exam => `
+                <button
+                    onclick="switchExam('${exam.id}')"
+                    class="w-full text-left text-sm p-2 rounded-md transition-colors mb-1 truncate ${
+                        appState.currentExamId === exam.id ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-gray-600 hover:bg-gray-100'
+                    }"
+                    title="${exam.name}"
+                >
+                    ${exam.name}
+                </button>
+            `).join('');
 
-                    {/* Header */}
-                    <div className="flex items-center justify-between border-b pb-4 mb-4">
-                        <div className="flex items-center">
-                            <img src={data.institution.logoUrl} alt="Logo" className="w-16 h-16 mr-4 rounded-full object-cover" />
-                            <div>
-                                <h2 className="text-2xl font-bold text-gray-800">{data.institution.name}</h2>
-                                <p className="text-sm text-gray-500">{data.institution.address}</p>
+            const sidebarHtml = `
+                <h2 class="text-2xl font-bold text-indigo-700 mb-4">Navigation</h2>
+                ${navHtml}
+                
+                <div class="border-t border-gray-200 pt-4 mt-6">
+                    <h3 class="text-lg font-semibold text-gray-700 mb-3">Exam Selector</h3>
+                    ${examOptionsHtml}
+                    <div class="mt-4 flex space-x-2" id="add-exam-form">
+                        <input type="text" id="new-exam-name" placeholder="New Exam Name" class="flex-grow p-2 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500"/>
+                        <button id="btn-add-exam" class="px-4 py-2 bg-indigo-500 text-white text-sm rounded-lg hover:bg-indigo-600 transition-colors">Add</button>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-200 pt-4 mt-6">
+                    <h3 class="text-lg font-semibold text-gray-700 mb-2">My User ID</h3>
+                    <p class="text-xs break-all bg-gray-100 p-2 rounded-lg text-gray-600">
+                        ${appState.userId || 'Loading...'}
+                    </p>
+                    <p class="text-xs text-gray-500 mt-1">This ID keeps your data secure and separate.</p>
+                </div>
+            `;
+            sidebar.innerHTML = sidebarHtml;
+            document.getElementById('btn-add-exam').addEventListener('click', handleAddExam);
+        };
+        
+        // --- Tab Renderers ---
+
+        const renderMarksheetTable = (students, subjects) => {
+            const totalMaxMark = students[0]?.totalMaxMark || 0;
+            
+            const headerCells = subjects.map(s => `
+                <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap">
+                    ${s.name} (/${s.maxMark})
+                </th>
+            `).join('');
+
+            const studentRows = students.map(student => {
+                const markCells = subjects.map(subject => {
+                    const markEntry = student.marks[subject.id] || {};
+                    return `
+                        <td class="px-3 py-2 text-sm text-center">
+                            <div class="p-1 rounded-md ${markEntry.bgColor || 'bg-gray-100'}">
+                                <span class="font-mono font-medium text-gray-800">${markEntry.score || 0}</span>
+                                <span class="block text-xs font-bold ${markEntry.color || 'text-gray-500'}">${markEntry.grade || 'N/A'}</span>
                             </div>
-                        </div>
-                        <h3 className="text-xl font-semibold text-blue-600">{data.examName}</h3>
-                    </div>
+                        </td>
+                    `;
+                }).join('');
 
-                    {/* Student Info */}
-                    <div className="flex justify-between items-start my-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                        <div className="space-y-1">
-                            <p className="text-lg font-bold">Student: <span className="text-blue-700">{student.name}</span></p>
-                            <p>Stream: <span className="font-medium">{student.stream}</span></p>
-                            <p>Roll No (ID): <span className="font-mono text-sm">{student.id}</span></p>
-                        </div>
-                        {student.photoUrl && (
-                            <img src={student.photoUrl} alt="Student" className="w-24 h-24 object-cover rounded-full shadow-md" />
-                        )}
-                    </div>
+                return `
+                    <tr class="hover:bg-indigo-50/50 transition-colors">
+                        <td class="px-3 py-2 text-sm text-gray-900 font-semibold text-center">${student.rank}</td>
+                        <td class="px-3 py-2 text-sm text-gray-900">${student.name}</td>
+                        <td class="px-3 py-2 text-sm text-gray-500">${student.stream}</td>
+                        ${markCells}
+                        <td class="px-3 py-2 text-sm font-bold text-center text-indigo-700">${student.total}</td>
+                        <td class="px-3 py-2 text-sm font-semibold text-center">${student.percentage}%</td>
+                        <td class="px-3 py-2 text-center">
+                            <button data-student-id="${student.id}" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium transition-colors view-report-btn">
+                                View Report
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
 
-                    {/* Marks Table */}
-                    <h4 className="text-xl font-semibold mt-6 mb-3 border-b pb-1">Subject Performance</h4>
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
+            const emptyRow = students.length === 0 ? `
+                <tr><td colspan="${subjects.length + 5}" class="py-4 text-center text-gray-500">No student data available. Please add students or upload marks.</td></tr>
+            ` : '';
+
+            return `
+                <div class="overflow-x-auto shadow-xl rounded-lg bg-white p-4">
+                    <h3 class="text-xl font-bold mb-4 text-indigo-700">Whole Mark Sheet - Ranked</h3>
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
                             <tr>
-                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Subject</th>
-                                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Score</th>
-                                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Max Marks</th>
-                                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Grade</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rank</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Stream</th>
+                                ${headerCells}
+                                <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Total (/${totalMaxMark})</th>
+                                <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Percentage</th>
+                                <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Action</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {data.subjects.map(subject => {
-                                const mark = student.marks[subject.id];
-                                const score = mark?.score ?? 0;
-                                const max = subject.maxMarks;
-                                const { grade, color, bg } = calculateGrade(score, max);
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${studentRows}
+                            ${emptyRow}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        };
+        
+        const renderMarksheetTab = () => {
+            const studentEntryRows = appState.data.students.map(student => {
+                const subjectInputs = appState.data.subjects.map(subject => {
+                    if (subject.isComposite && subject.subSubjects.length > 0) {
+                        const subInputs = subject.subSubjects.map(ss => `
+                            <div class="flex items-center justify-center space-x-1 text-xs">
+                                <label class="text-gray-600 font-medium">${ss.name} (/${ss.maxMark}):</label>
+                                <input
+                                    type="number" min="0" max="${ss.maxMark}"
+                                    data-student-id="${student.id}" data-subject-id="${subject.id}" data-subsubject-name="${ss.name}"
+                                    value="${student.marks[subject.id]?.subMarks?.[ss.name] || ''}"
+                                    class="w-16 p-1 border border-gray-300 rounded-md text-center text-sm sub-mark-input"
+                                />
+                            </div>
+                        `).join('');
+                        return `<td class="px-3 py-2 text-center"><div class="space-y-1">${subInputs}</div></td>`;
+                    } else {
+                        return `
+                            <td class="px-3 py-2 text-center">
+                                <input
+                                    type="number" min="0" max="${subject.maxMark}"
+                                    data-student-id="${student.id}" data-subject-id="${subject.id}"
+                                    value="${student.marks[subject.id]?.score || ''}"
+                                    class="w-20 p-2 border border-gray-300 rounded-lg text-center font-mono mark-input"
+                                />
+                            </td>
+                        `;
+                    }
+                }).join('');
 
-                                return (
-                                    <React.Fragment key={subject.id}>
-                                        <tr className={`${bg} hover:bg-gray-100 transition-colors`}>
-                                            <td className="px-3 py-2 font-medium">{subject.name}</td>
-                                            <td className="px-3 py-2 text-center">{score}</td>
-                                            <td className="px-3 py-2 text-center">{max}</td>
-                                            <td className={`px-3 py-2 text-center font-bold ${color}`}>{grade}</td>
-                                        </tr>
-                                        {subject.subSubjects.length > 0 && mark?.subScores && (
-                                            subject.subSubjects.map(subSub => (
-                                                <tr key={subSub.name} className="text-xs italic bg-gray-50">
-                                                    <td className="px-6 py-1">-- {subSub.name}</td>
-                                                    <td className="px-3 py-1 text-center">{mark.subScores[subSub.name] ?? 0}</td>
-                                                    <td className="px-3 py-1 text-center">{subSub.maxMarks}</td>
-                                                    <td className="px-3 py-1 text-center"></td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </React.Fragment>
-                                );
-                            })}
+                return `
+                    <tr class="hover:bg-gray-50/50 transition-colors">
+                        <td class="px-3 py-2 text-sm font-semibold text-gray-900">
+                            ${student.name} <span class="block text-xs font-normal text-gray-500">(${student.stream})</span>
+                        </td>
+                        ${subjectInputs}
+                    </tr>
+                `;
+            }).join('');
+
+            return `
+                <div class="space-y-8">
+                    <h2 class="text-3xl font-extrabold text-gray-800">${appState.data.institution.examName} - Mark Sheet Entry</h2>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Add New Student -->
+                        <div class="p-6 bg-white rounded-xl shadow-lg border border-gray-100">
+                            <h3 class="text-xl font-bold text-indigo-700 mb-4">Add New Student</h3>
+                            <div class="space-y-3" id="add-student-form">
+                                <input type="text" id="student-name-input" placeholder="Student Name" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
+                                <select id="student-stream-input" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                                    <option value="Computer Science">Computer Science</option>
+                                    <option value="Biology Science">Biology Science</option>
+                                    <option value="Commerce">Commerce</option>
+                                </select>
+                                <input type="url" id="student-photo-input" placeholder="Photo URL (Optional)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
+                                <button id="btn-add-student" class="w-full py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-shadow shadow-md hover:shadow-lg">
+                                    Add Student
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Upload Excel/CSV -->
+                        <div class="p-6 bg-white rounded-xl shadow-lg border border-gray-100">
+                            <h3 class="text-xl font-bold text-indigo-700 mb-4">Upload Marks (CSV/Excel)</h3>
+                            <p class="text-sm text-gray-600 mb-3">Upload a CSV file. Format: <code>Name, Stream, PhotoURL, Subject1 Mark, Subject2 Mark, ...</code></p>
+                            <input type="file" accept=".csv" id="csv-upload-input" class="w-full file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/>
+                            <p id="upload-message" class="mt-3 text-sm italic text-indigo-500">${appState.uploadMessage}</p>
+                        </div>
+                    </div>
+
+                    <h3 class="text-2xl font-bold text-gray-800 border-b pb-2">Student Mark Entry</h3>
+                    <div class="overflow-x-auto shadow-xl rounded-lg">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-indigo-50">
+                                <tr>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase">Name (Stream)</th>
+                                    ${appState.data.subjects.map(s => `
+                                        <th class="px-3 py-3 text-center text-xs font-medium text-gray-600 uppercase whitespace-nowrap">
+                                            ${s.name} (Max: ${s.maxMark})
+                                        </th>
+                                    `).join('')}
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200" id="mark-entry-table-body">
+                                ${studentEntryRows}
+                                ${appState.data.students.length === 0 ? `<tr><td colspan="${appState.data.subjects.length + 1}" class="py-4 text-center text-gray-500">No students added yet.</td></tr>` : ''}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mt-8">
+                        <h3 class="text-2xl font-bold text-gray-800 border-b pb-2 mb-4">Whole Mark Sheet (Ranked)</h3>
+                        ${renderMarksheetTable(appState.rankedStudents, appState.data.subjects)}
+                        
+                        <div class="mt-6 flex space-x-4 justify-center">
+                            <button id="download-marksheet-csv" class="px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition-shadow">
+                                Download Mark Sheet (Excel/CSV)
+                            </button>
+                            <button id="download-marksheet-pdf" class="px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition-shadow">
+                                Download Mark Sheet (PDF/Print)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        const renderProgressReportViewer = (student) => {
+            if (!student) return `
+                <div class="text-center p-12 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                    <p class="text-lg text-gray-500">Select a student above to view their detailed progress report.</p>
+                </div>
+            `;
+            
+            const subjectRows = appState.data.subjects.map(s => {
+                const markEntry = student.marks[s.id] || {};
+                
+                const subSubjectRows = s.isComposite && s.subSubjects.length > 0 ? 
+                    s.subSubjects.map(ss => `
+                        <tr class="bg-white text-gray-600 hover:bg-gray-50">
+                            <td class="px-6 py-2 text-xs italic">-- ${ss.name}</td>
+                            <td class="px-4 py-2 text-xs text-center">${ss.maxMark}</td>
+                            <td class="px-4 py-2 text-xs text-center">${student.marks[s.id]?.subMarks?.[ss.name] || 0}</td>
+                            <td colspan="2" class="px-4 py-2 text-xs text-center"></td>
+                        </tr>
+                    `).join('') : '';
+
+                return `
+                    <tr class="bg-indigo-50/50">
+                        <td class="px-4 py-3 text-sm font-semibold text-gray-800">${s.name}</td>
+                        <td class="px-4 py-3 text-sm text-center">${markEntry.maxMark || s.maxMark}</td>
+                        <td class="px-4 py-3 text-sm font-bold text-center text-gray-800">${markEntry.score || 0}</td>
+                        <td class="px-4 py-3 text-sm text-center font-medium">${markEntry.percentage || '0.00'}%</td>
+                        <td class="px-4 py-3 text-sm font-extrabold text-center ${markEntry.color || 'text-gray-500'}">${markEntry.grade || 'N/A'}</td>
+                    </tr>
+                    ${subSubjectRows}
+                `;
+            }).join('');
+
+            return `
+                <div class="p-8 bg-white border border-gray-200 rounded-xl shadow-xl space-y-6" id="progress-report-print">
+                    <!-- Institution Header -->
+                    <div class="flex justify-between items-start border-b-4 border-indigo-600 pb-4 mb-8">
+                        <div>
+                            <h1 class="text-3xl font-extrabold text-gray-800">${appState.data.institution.name}</h1>
+                            <p class="text-sm text-gray-600 mt-1">${appState.data.institution.address}</p>
+                            <p class="text-lg font-semibold text-indigo-600 mt-2">${appState.data.institution.examName} - Progress Report</p>
+                        </div>
+                        <!-- Logo Area -->
+                        <img src="${student.photoUrl || 'https://placehold.co/100x40/4F46E5/ffffff?text=LOGO'}" alt="Logo" class="h-10 w-auto rounded-lg shadow-md"/>
+                    </div>
+
+                    <!-- Student Details -->
+                    <div class="flex items-center justify-between bg-indigo-50 p-4 rounded-lg">
+                        <div class="space-y-1">
+                            <p class="text-lg font-bold text-gray-800">Student Name: <span class="text-indigo-700">${student.name}</span></p>
+                            <p class="text-md text-gray-700">Stream: <span class="font-medium">${student.stream}</span></p>
+                            <p class="text-md text-gray-700">Overall Rank: <span class="font-bold bg-indigo-200 px-2 py-0.5 rounded text-indigo-800">${student.rank}</span></p>
+                        </div>
+                        ${student.photoUrl ? `<img src="${student.photoUrl}" alt="${student.name}'s Photo" class="w-20 h-20 object-cover rounded-full border-4 border-indigo-300 shadow-lg" onerror="this.onerror=null; this.src='https://placehold.co/80x80/cccccc/333333?text=No+Photo'"/>` : ''}
+                    </div>
+
+                    <!-- Mark Breakdown Table -->
+                    <h3 class="text-2xl font-semibold text-gray-700 mt-6 border-b pb-2">Subject Performance</h3>
+                    <table class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg overflow-hidden">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Subject</th>
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Max Mark</th>
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Score</th>
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Percentage</th>
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Grade</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-100">
+                            ${subjectRows}
                         </tbody>
                     </table>
 
-                    {/* Summary */}
-                    <div className="mt-6 border-t pt-4 grid grid-cols-3 gap-4">
-                        <div className="p-3 bg-indigo-50 rounded-lg text-center shadow-inner">
-                            <p className="text-sm text-indigo-700">Total Marks</p>
-                            <p className="text-2xl font-extrabold text-indigo-900">{totalScore} / {totalMaxMarks}</p>
-                        </div>
-                        <div className="p-3 bg-purple-50 rounded-lg text-center shadow-inner">
-                            <p className="text-sm text-purple-700">Percentage</p>
-                            <p className="text-2xl font-extrabold text-purple-900">{percentage}%</p>
-                        </div>
-                        <div className="p-3 bg-yellow-50 rounded-lg text-center shadow-inner">
-                            <p className="text-sm text-yellow-700">Overall Rank</p>
-                            <p className="text-2xl font-extrabold text-yellow-900">{rank} <Award className="inline h-6 w-6" /></p>
+                    <!-- Summary -->
+                    <div class="pt-4 mt-6 border-t border-dashed border-gray-300">
+                        <h3 class="text-2xl font-semibold text-gray-700">Overall Summary</h3>
+                        <div class="mt-4 grid grid-cols-3 gap-4 text-center">
+                            <div class="bg-green-50 p-4 rounded-lg border-2 border-green-200">
+                                <p class="text-sm text-gray-600">Total Marks Obtained</p>
+                                <p class="text-3xl font-bold text-green-700 mt-1">${student.total}</p>
+                            </div>
+                            <div class="bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
+                                <p class="text-sm text-gray-600">Total Max Mark</p>
+                                <p class="text-3xl font-bold text-blue-700 mt-1">${student.totalMaxMark}</p>
+                            </div>
+                            <div class="bg-indigo-50 p-4 rounded-lg border-2 border-indigo-200">
+                                <p class="text-sm text-gray-600">Overall Percentage</p>
+                                <p class="text-3xl font-bold text-indigo-700 mt-1">${student.percentage}%</p>
+                            </div>
                         </div>
                     </div>
-
-                    <div className={`mt-4 p-3 rounded-lg text-center font-bold text-xl ${overallGrade.bg} ${overallGrade.color}`}>
-                        Overall Grade: {overallGrade.grade}
-                    </div>
-
-                    <p className="mt-6 text-xs text-gray-500 text-center">-- Generated by {data.institution.name} System --</p>
+                    <p class="text-xs text-center text-gray-400 pt-4">Generated by The Mark Upload System (User ID: ${appState.userId})</p>
                 </div>
-            </div>
-        );
-    };
+            `;
+        };
 
-    const ConfigurationView = () => (
-        <div className="p-4 space-y-8 max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Institution & Examination Setup</h2>
+        const renderReportsTab = () => {
+            const selectedStudent = appState.rankedStudents.find(s => s.id === appState.selectedStudentId);
+            
+            const studentOptions = appState.rankedStudents.map(s => `
+                <option value="${s.id}" ${s.id === appState.selectedStudentId ? 'selected' : ''}>
+                    ${s.name} (Rank: ${s.rank})
+                </option>
+            `).join('');
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-6 rounded-xl shadow-inner">
-                {/* Institution Details */}
-                <div className="space-y-4">
-                    <h3 className="text-xl font-semibold text-blue-600">Institution Details</h3>
-                    <input
-                        type="text"
-                        placeholder="Institution Name"
-                        className="w-full p-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                        value={data.institution.name}
-                        onChange={(e) => handleInstDetailsChange('name', e.target.value)}
-                    />
-                    <input
-                        type="text"
-                        placeholder="Institution Address/Motto"
-                        className="w-full p-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                        value={data.institution.address}
-                        onChange={(e) => handleInstDetailsChange('address', e.target.value)}
-                    />
-                    <div className="flex items-center space-x-2">
-                        <img src={data.institution.logoUrl} alt="Logo" className="w-10 h-10 rounded-full object-cover shadow" />
-                        <span className="text-sm text-gray-500">Logo URL: {data.institution.logoUrl}</span>
+            return `
+                <div class="space-y-6">
+                    <h2 class="text-3xl font-extrabold text-gray-800">Student Progress Reports</h2>
+
+                    <!-- Student Selector -->
+                    <div class="p-6 bg-white rounded-xl shadow-lg border border-gray-100 flex items-center space-x-4 no-print">
+                        <select id="student-selector" class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white text-gray-800">
+                            <option value="">-- Select a Student for Report --</option>
+                            ${studentOptions}
+                        </select>
+
+                        ${selectedStudent ? `
+                            <div class="flex space-x-3">
+                                <button id="download-report-csv" class="px-4 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition-shadow text-sm whitespace-nowrap">
+                                    Download CSV
+                                </button>
+                                <button id="download-report-pdf" class="px-4 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition-shadow text-sm whitespace-nowrap">
+                                    Download PDF
+                                </button>
+                            </div>
+                        ` : ''}
                     </div>
-                </div>
 
-                {/* Examination Details */}
-                <div className="space-y-4">
-                    <h3 className="text-xl font-semibold text-blue-600">Examination Details</h3>
-                    <input
-                        type="text"
-                        placeholder="Examination Name"
-                        className="w-full p-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                        value={data.examName}
-                        onChange={(e) => updateData({ ...data, examName: e.target.value })}
-                    />
+                    <!-- Individual Report View -->
+                    ${renderProgressReportViewer(selectedStudent)}
                 </div>
-            </div>
+            `;
+        };
 
-            {/* Subject Management */}
-            <h2 className="text-2xl font-bold text-gray-800 border-b pb-2 mt-8">Subject Management</h2>
-            <div className="space-y-4">
-                {data.subjects.map((subject, index) => (
-                    <div key={subject.id} className="p-4 border border-blue-200 rounded-xl bg-white shadow-sm">
-                        <div className="flex items-center space-x-3 mb-2">
-                            <input
-                                type="text"
-                                placeholder="Subject Name"
-                                className="flex-1 p-2 border rounded-lg font-semibold"
-                                value={subject.name}
-                                onChange={(e) => handleSubjectChange(subject.id, 'name', e.target.value)}
-                            />
-                            <input
-                                type="number"
-                                placeholder="Max Marks"
-                                className="w-32 p-2 border rounded-lg text-center"
-                                value={subject.maxMarks}
-                                onChange={(e) => handleSubjectChange(subject.id, 'maxMarks', e.target.value)}
-                            />
-                            <button
-                                className="p-2 text-red-600 hover:bg-red-100 rounded-full transition-colors"
-                                onClick={() => removeSubject(subject.id)}
-                            >
-                                <Trash2 size={20} />
-                            </button>
+        const renderSettingsTab = () => {
+            const subjectListHtml = appState.data.subjects.map(s => {
+                const subSubjectList = s.subSubjects.map(ss => `
+                    <div class="flex justify-between items-center text-sm ml-4 bg-gray-50 p-2 rounded-md">
+                        <span class="font-mono">${ss.name} (/ ${ss.maxMark})</span>
+                        <button data-subject-id="${s.id}" data-subsubject-name="${ss.name}" class="text-xs text-red-400 hover:text-red-600 transition-colors remove-subsubject-btn">Remove</button>
+                    </div>
+                `).join('');
+                
+                return `
+                    <div class="p-4 border border-gray-200 rounded-lg shadow-sm">
+                        <div class="flex justify-between items-center">
+                            <span class="text-lg font-semibold text-gray-800">${s.name} <span class="text-sm font-normal text-indigo-500">(/ ${s.maxMark})</span></span>
+                            <div class="space-x-2">
+                                <button data-subject-id="${s.id}" class="text-xs px-3 py-1 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition-colors add-subsubject-btn">+ Sub-subject</button>
+                                <button data-subject-id="${s.id}" class="text-xs px-3 py-1 bg-red-100 text-red-600 rounded-full hover:bg-red-200 transition-colors remove-subject-btn">Remove</button>
+                            </div>
                         </div>
+                        ${s.subSubjects.length > 0 ? `<div class="mt-3 border-t pt-3 space-y-2"><p class="text-sm font-medium text-gray-600">Sub-subjects (Total Max: ${s.maxMark})</p>${subSubjectList}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
 
-                        {/* Sub-Subjects (Optional) */}
-                        <div className="pl-4 border-l-2 border-dashed border-gray-300">
-                            {subject.subSubjects.map((subSub, ssIndex) => (
-                                <div key={ssIndex} className="flex items-center space-x-2 text-sm mt-1">
-                                    <span className="text-gray-600 w-24 overflow-hidden text-ellipsis whitespace-nowrap">{subSub.name}</span>
-                                    <span className="text-gray-400">({subSub.maxMarks})</span>
-                                    <button
-                                        className="text-red-400 hover:text-red-600"
-                                        onClick={() => removeSubSubject(subject.id, subSub.name)}
-                                    >
-                                        <X size={14} />
-                                    </button>
-                                </div>
-                            ))}
-                            <button
-                                className="mt-2 text-xs text-blue-500 hover:text-blue-700 font-medium"
-                                onClick={() => addSubSubject(subject.id)}
-                            >
-                                + Add Sub-Subject
-                            </button>
+            const gradeScaleHtml = GRADE_SCALE.map(g => `
+                <div class="text-center">
+                    <p class="text-xs text-gray-600">Min %</p>
+                    <p class="text-lg font-bold">${g.threshold}%</p>
+                    <p class="text-2xl font-extrabold ${g.color} ${g.grade === 'F' || g.grade === 'A+' ? 'bg-' + g.color.replace('text-', '').replace('-600', '-100') + ' p-1 rounded' : ''}">${g.grade}</p>
+                </div>
+            `).join('');
+
+            return `
+                <div class="space-y-8">
+                    <h2 class="text-3xl font-extrabold text-gray-800">Application Settings</h2>
+
+                    <!-- Institution Details -->
+                    <div class="p-6 bg-white rounded-xl shadow-lg border border-gray-100">
+                        <h3 class="text-xl font-bold text-indigo-700 mb-4 border-b pb-2">Institution Details</h3>
+                        <div class="space-y-3">
+                            <input type="text" id="inst-name" placeholder="Institution Name" value="${appState.data.institution.name}" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
+                            <input type="text" id="inst-address" placeholder="Institution Address" value="${appState.data.institution.address}" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
+                            <input type="url" id="inst-logo-url" placeholder="Logo URL (Appears on reports)" value="${appState.data.institution.logoUrl}" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
                         </div>
                     </div>
-                ))}
-            </div>
 
-            <button
-                className="w-full py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-lg flex items-center justify-center space-x-2"
-                onClick={addSubject}
-            >
-                <Book size={20} />
-                <span>Add New Subject</span>
-            </button>
+                    <!-- Subject Management -->
+                    <div class="p-6 bg-white rounded-xl shadow-lg border border-gray-100">
+                        <h3 class="text-xl font-bold text-indigo-700 mb-4 border-b pb-2">Subject Management</h3>
+                        
+                        <!-- Add Subject Form -->
+                        <div class="p-4 bg-indigo-50 rounded-lg mb-6">
+                            <h4 class="font-semibold text-indigo-700 mb-2">Add New Subject</h4>
+                            <div class="flex space-x-2">
+                                <input type="text" id="new-subject-name" placeholder="Subject Name" class="flex-grow p-2 border border-gray-300 rounded-lg"/>
+                                <input type="number" id="new-subject-max-mark" placeholder="Max Mark" min="1" value="100" class="w-32 p-2 border border-gray-300 rounded-lg text-center"/>
+                                <button id="btn-add-subject" class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-colors">Add Subject</button>
+                            </div>
+                        </div>
+
+                        <!-- Existing Subjects List -->
+                        <div class="space-y-4">
+                            ${subjectListHtml}
+                            ${appState.data.subjects.length === 0 ? '<p class="text-center text-gray-500 italic">No subjects added yet. Add a subject to start!</p>' : ''}
+                        </div>
+                    </div>
+
+                     <!-- Grading Scale Info -->
+                    <div class="p-6 bg-white rounded-xl shadow-lg border border-gray-100">
+                        <h3 class="text-xl font-bold text-indigo-700 mb-4 border-b pb-2">Grading Scale Reference</h3>
+                        <div class="flex space-x-4 justify-between overflow-x-auto">
+                            ${gradeScaleHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+        
+
+        // --- HANDLERS AND EVENT ATTACHMENTS ---
+
+        const handleAddExam = async () => {
+            const newExamNameInput = document.getElementById('new-exam-name');
+            const newExamName = newExamNameInput?.value.trim();
+
+            if (!newExamName || !appState.db || !appState.userId) return;
+
+            const newExamId = `exam-${Date.now()}`;
+            const newExamEntry = { id: newExamId, name: newExamName };
+            const updatedExamList = [...appState.examList, newExamEntry];
+            
+            // 1. Save the updated list of exams
+            const examsDocRef = doc(appState.db, `/artifacts/${appId}/users/${appState.userId}/mark_sheets`, 'exam_list');
+            await setDoc(examsDocRef, { exams: updatedExamList }, { merge: true });
+
+            // 2. Create the new exam's data document with initial structure
+            const dataDocRef = doc(appState.db, `/artifacts/${appId}/users/${appState.userId}/mark_sheets`, newExamId);
+            await setDoc(dataDocRef, { ...INITIAL_DATA, institution: { ...INITIAL_DATA.institution, examName: newExamName } });
+
+            appState.currentExamId = newExamId;
+            newExamNameInput.value = '';
+            // The onSnapshot listener will handle the rendering automatically
+        };
+
+        const handleAddStudent = () => {
+            const nameInput = document.getElementById('student-name-input');
+            const streamSelect = document.getElementById('student-stream-input');
+            const photoInput = document.getElementById('student-photo-input');
+            
+            const name = nameInput.value.trim();
+            if (!name) return;
+
+            const newStudent = {
+                id: `s-${appState.data.nextStudentId}`,
+                name: name,
+                stream: streamSelect.value,
+                photoUrl: photoInput.value.trim(),
+                marks: {},
+                total: 0,
+                percentage: '0.00',
+                rank: appState.data.students.length + 1,
+            };
+
+            const newStudents = [...appState.data.students, newStudent];
+            saveData({ students: newStudents, nextStudentId: appState.data.nextStudentId + 1 });
+            
+            nameInput.value = '';
+            photoInput.value = '';
+            // Re-render handled by saveData
+        };
+
+        const handleMarkChange = (e) => {
+            const studentId = e.target.dataset.studentId;
+            const subjectId = e.target.dataset.subjectId;
+            const score = Math.max(0, parseInt(e.target.value) || 0);
+
+            const newStudents = appState.data.students.map(s => {
+                if (s.id === studentId) {
+                    return {
+                        ...s,
+                        marks: {
+                            ...s.marks,
+                            [subjectId]: {
+                                ...s.marks[subjectId],
+                                score: score
+                            }
+                        }
+                    };
+                }
+                return s;
+            });
+
+            saveData({ students: newStudents }, false); // Do not force render, rely on Firestore
+        };
+
+        const handleSubMarkChange = (e) => {
+            const studentId = e.target.dataset.studentId;
+            const subjectId = e.target.dataset.subjectId;
+            const subSubjectName = e.target.dataset.subsubjectName;
+            const score = Math.max(0, parseInt(e.target.value) || 0);
+
+            const newStudents = appState.data.students.map(s => {
+                if (s.id === studentId) {
+                    const existingMarks = s.marks[subjectId] || {};
+                    const existingSubMarks = existingMarks.subMarks || {};
+                    
+                    return {
+                        ...s,
+                        marks: {
+                            ...s.marks,
+                            [subjectId]: {
+                                ...existingMarks,
+                                subMarks: {
+                                    ...existingSubMarks,
+                                    [subSubjectName]: score
+                                }
+                            }
+                        }
+                    };
+                }
+                return s;
+            });
+            saveData({ students: newStudents }, false); // Do not force render
+        };
+
+        const handleAddSubject = () => {
+            const nameInput = document.getElementById('new-subject-name');
+            const maxMarkInput = document.getElementById('new-subject-max-mark');
+            
+            const name = nameInput.value.trim();
+            const maxMark = parseInt(maxMarkInput.value) || 0;
+
+            if (!name || maxMark <= 0) return;
+
+            const newId = `sub-${Math.random().toString(36).substr(2, 9)}`;
+            const subjectToAdd = {
+                id: newId,
+                name: name,
+                maxMark: maxMark,
+                isComposite: false,
+                subSubjects: []
+            };
+
+            const updatedSubjects = [...appState.data.subjects, subjectToAdd];
+
+            saveData({ subjects: updatedSubjects });
+            nameInput.value = '';
+            maxMarkInput.value = 100;
+        };
+
+        const handleRemoveSubject = (e) => {
+            const idToRemove = e.target.dataset.subjectId;
+             // Check against the instruction rule of no alerts/confirms
+            console.log(`Confirmation: Are you sure you want to remove subject ${idToRemove}?`);
+            
+            // In a real app, a custom modal would confirm this. Simulating approval:
+            if (true) {
+                const updatedSubjects = appState.data.subjects.filter(s => s.id !== idToRemove);
+                
+                // Also remove the subject's marks from all students
+                const updatedStudents = appState.data.students.map(s => {
+                    const { [idToRemove]: removedMark, ...restMarks } = s.marks;
+                    return { ...s, marks: restMarks };
+                });
+
+                saveData({ subjects: updatedSubjects, students: updatedStudents });
+            }
+        };
+
+        const handleAddSubSubject = (e) => {
+            const subjectId = e.target.dataset.subjectId;
+            const newSubjects = appState.data.subjects.map(s => {
+                if (s.id === subjectId) {
+                    const newSub = { name: `Sub-Part ${s.subSubjects.length + 1}`, maxMark: 50 };
+                    const newSubs = [...s.subSubjects, newSub];
+                    const newMaxMark = newSubs.reduce((sum, ss) => sum + ss.maxMark, 0);
+                    return { ...s, subSubjects: newSubs, maxMark: newMaxMark, isComposite: true };
+                }
+                return s;
+            });
+            saveData({ subjects: newSubjects });
+        };
+        
+        const handleRemoveSubSubject = (e) => {
+            const subjectId = e.target.dataset.subjectId;
+            const subSubjectName = e.target.dataset.subsubjectName;
+
+            const newSubjects = appState.data.subjects.map(s => {
+                if (s.id === subjectId) {
+                    const newSubs = s.subSubjects.filter(ss => ss.name !== subSubjectName);
+                    const newMaxMark = newSubs.reduce((sum, ss) => sum + ss.maxMark, 0);
+                    return { ...s, subSubjects: newSubs, maxMark: newMaxMark, isComposite: newSubs.length > 0 };
+                }
+                return s;
+            });
+            saveData({ subjects: newSubjects });
+        };
+
+        const handleInstDetailChange = (e) => {
+            const key = e.target.id.replace('inst-', '');
+            const value = e.target.value;
+            saveData({ institution: { ...appState.data.institution, [key]: value } }, false); // No force render
+        };
+
+        const handleStudentSelectorChange = (e) => {
+            appState.selectedStudentId = e.target.value;
+            render();
+        };
+        
+        // --- DOWNLOAD/FILE HANDLERS ---
+        
+        /** Utility: Downloads a string content as a file */
+        const downloadFile = (content, filename, mimeType) => {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        /** Utility: Converts data to a CSV string */
+        const convertToCsv = (data, headers) => {
+            const csvRows = [];
+            csvRows.push(headers.join(','));
+            for (const row of data) {
+                const values = headers.map(header => {
+                    const value = row[header] || '';
+                    const formattedValue = ('' + value).replace(/"/g, '""');
+                    return formattedValue.includes(',') || formattedValue.includes('"') ? `"${formattedValue}"` : formattedValue;
+                });
+                csvRows.push(values.join(','));
+            }
+            return csvRows.join('\n');
+        };
+
+        const handleDownloadWholeMarksheet = (format) => {
+            if (appState.rankedStudents.length === 0) {
+                 console.log('Notification: No data to download.');
+                 return;
+            }
+
+            if (format === 'csv') {
+                const baseHeaders = ['Rank', 'Name', 'Stream', 'Total Score', 'Total Max Mark', 'Percentage'];
+                const subjectHeaders = appState.data.subjects.flatMap(s => [`${s.name} Score`, `${s.name} Grade`, `${s.name} %`]);
+                const allHeaders = [...baseHeaders, ...subjectHeaders];
+
+                const csvData = appState.rankedStudents.map(student => {
+                    const row = {
+                        'Rank': student.rank,
+                        'Name': student.name,
+                        'Stream': student.stream,
+                        'Total Score': student.total,
+                        'Total Max Mark': student.totalMaxMark,
+                        'Percentage': student.percentage + '%',
+                    };
+                    
+                    appState.data.subjects.forEach(s => {
+                        const markEntry = student.marks[s.id] || {};
+                        row[`${s.name} Score`] = markEntry.score || 0;
+                        row[`${s.name} Grade`] = markEntry.grade || 'N/A';
+                        row[`${s.name} %`] = markEntry.percentage || '0.00';
+                    });
+                    return row;
+                });
+
+                const csvContent = convertToCsv(csvData, allHeaders);
+                downloadFile(csvContent, `${appState.data.institution.examName}_Marksheet.csv`, 'text/csv;charset=utf-8;');
+            } else if (format === 'pdf') {
+                // To get a PDF, user must print the rendered table view.
+                console.log('Notification: To save as PDF, please use your browser\'s Print function (Ctrl+P or Cmd+P) and select "Save as PDF".');
+            }
+        };
+
+        const handleDownloadIndividualReport = (student, format) => {
+            if (format === 'csv') {
+                const reportData = [
+                    { Key: 'Student Name', Value: student.name },
+                    { Key: 'Stream', Value: student.stream },
+                    { Key: 'Overall Rank', Value: student.rank },
+                    { Key: 'Total Score', Value: student.total },
+                    { Key: 'Total Max Mark', Value: student.totalMaxMark },
+                    { Key: 'Overall Percentage', Value: `${student.percentage}%` },
+                ];
+
+                appState.data.subjects.forEach(s => {
+                    const markEntry = student.marks[s.id] || {};
+                    reportData.push({ Key: `${s.name} Score`, Value: markEntry.score || 0 });
+                    reportData.push({ Key: `${s.name} Grade`, Value: markEntry.grade || 'N/A' });
+                    reportData.push({ Key: `${s.name} Percentage`, Value: `${markEntry.percentage || '0.00'}%` });
+                });
+
+                const csvContent = convertToCsv(reportData, ['Key', 'Value']);
+                downloadFile(csvContent, `${student.name}_Progress_Report.csv`, 'text/csv;charset=utf-8;');
+            } else if (format === 'pdf') {
+                // Set the student and trigger print on the report view
+                appState.selectedStudentId = student.id;
+                appState.activeTab = 'reports';
+                render();
+                setTimeout(() => {
+                    window.print();
+                }, 100);
+            }
+        };
+
+        const handleFileUpload = (event) => {
+            const file = event.target.files[0];
+            const uploadMessageEl = document.getElementById('upload-message');
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const content = e.target.result;
+                    const rows = content.trim().split('\n').filter(row => row.trim() !== '');
+                    if (rows.length < 1) {
+                        uploadMessageEl.textContent = 'File is empty.';
+                        return;
+                    }
+                    
+                    const headers = rows[0].split(',').map(h => h.trim());
+                    const subjectNamesFromCsv = headers.slice(3).filter(h => h.trim());
+
+                    if (subjectNamesFromCsv.length === 0) {
+                        uploadMessageEl.textContent = 'CSV must contain "Name", "Stream", "PhotoURL" and at least one subject mark column.';
+                        return;
+                    }
+
+                    // 1. Add/Update Subjects
+                    const existingSubjectNames = new Set(appState.data.subjects.map(s => s.name));
+                    let updatedSubjects = [...appState.data.subjects];
+
+                    subjectNamesFromCsv.forEach(subjectName => {
+                        if (!existingSubjectNames.has(subjectName)) {
+                            updatedSubjects.push({
+                                id: `sub-${Math.random().toString(36).substr(2, 9)}`,
+                                name: subjectName,
+                                maxMark: 100, // Default max mark for new subjects from CSV
+                                isComposite: false,
+                                subSubjects: []
+                            });
+                        }
+                    });
+
+                    const subjectNameToId = updatedSubjects.reduce((acc, sub) => {
+                        acc[sub.name] = sub.id;
+                        return acc;
+                    }, {});
+
+                    // 2. Process Student Rows
+                    let currentId = appState.data.nextStudentId;
+                    const newStudents = rows.slice(1).map(row => {
+                        const values = row.split(',').map(v => v.trim());
+                        if (values.length < 3) return null;
+
+                        const studentData = {
+                            id: `s-${currentId++}`,
+                            name: values[0],
+                            stream: values[1],
+                            photoUrl: values[2] || '',
+                            marks: {},
+                        };
+                        
+                        values.slice(3).forEach((scoreStr, index) => {
+                            const subjectName = subjectNamesFromCsv[index];
+                            const subjectId = subjectNameToId[subjectName];
+                            if (subjectId) {
+                                studentData.marks[subjectId] = { score: parseInt(scoreStr) || 0 };
+                            }
+                        });
+
+                        return studentData;
+                    }).filter(s => s !== null);
+
+                    saveData({
+                        subjects: updatedSubjects,
+                        students: newStudents, 
+                        nextStudentId: currentId
+                    });
+
+                    uploadMessageEl.textContent = `Successfully processed ${newStudents.length} students. New subjects added/updated.`;
+
+                } catch (error) {
+                    uploadMessageEl.textContent = `Error processing file: ${error.message}`;
+                    console.error("File processing error:", error);
+                }
+            };
+            reader.readAsText(file);
+        };
+
+
+        /** Attaches all event listeners after a full DOM render */
+        const attachEventListeners = () => {
+            // --- Marksheet Tab ---
+            document.getElementById('btn-add-student')?.addEventListener('click', handleAddStudent);
+            document.getElementById('csv-upload-input')?.addEventListener('change', handleFileUpload);
+            document.getElementById('download-marksheet-csv')?.addEventListener('click', () => handleDownloadWholeMarksheet('csv'));
+            document.getElementById('download-marksheet-pdf')?.addEventListener('click', () => handleDownloadWholeMarksheet('pdf'));
+            
+            // Dynamic Mark Inputs
+            document.querySelectorAll('.mark-input').forEach(input => {
+                input.addEventListener('input', handleMarkChange);
+            });
+            document.querySelectorAll('.sub-mark-input').forEach(input => {
+                input.addEventListener('input', handleSubMarkChange);
+            });
+            document.querySelectorAll('.view-report-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    appState.selectedStudentId = e.target.dataset.studentId;
+                    setActiveTab('reports');
+                });
+            });
+
+            // --- Reports Tab ---
+            document.getElementById('student-selector')?.addEventListener('change', handleStudentSelectorChange);
+            const selectedStudent = appState.rankedStudents.find(s => s.id === appState.selectedStudentId);
+            if (selectedStudent) {
+                document.getElementById('download-report-csv')?.addEventListener('click', () => handleDownloadIndividualReport(selectedStudent, 'csv'));
+                document.getElementById('download-report-pdf')?.addEventListener('click', () => handleDownloadIndividualReport(selectedStudent, 'pdf'));
+            }
+
+            // --- Settings Tab ---
+            document.getElementById('inst-name')?.addEventListener('input', handleInstDetailChange);
+            document.getElementById('inst-address')?.addEventListener('input', handleInstDetailChange);
+            document.getElementById('inst-logo-url')?.addEventListener('input', handleInstDetailChange);
+            document.getElementById('btn-add-subject')?.addEventListener('click', handleAddSubject);
+            
+            document.querySelectorAll('.remove-subject-btn').forEach(btn => btn.addEventListener('click', handleRemoveSubject));
+            document.querySelectorAll('.add-subsubject-btn').forEach(btn => btn.addEventListener('click', handleAddSubSubject));
+            document.querySelectorAll('.remove-subsubject-btn').forEach(btn => btn.addEventListener('click', handleRemoveSubSubject));
+        };
+
+        // --- INITIALIZATION ---
+        window.onload = () => {
+            window.setActiveTab = setActiveTab; // Expose to global scope for buttons
+            window.switchExam = window.switchExam; // Expose switch exam handler
+            initializeFirebase();
+        };
+
+    </script>
+</head>
+<body class="bg-gray-100">
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="fixed inset-0 flex items-center justify-center bg-gray-100 z-50">
+        <div class="text-2xl text-indigo-600 font-semibold flex items-center space-x-3">
+            <svg class="animate-spin h-6 w-6 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            <span>Loading Application and Data...</span>
         </div>
-    );
+    </div>
 
-    const MarkSheetView = () => (
-        <div className="p-4">
-            <div className="flex items-center justify-between mb-6 border-b pb-3">
-                <div>
-                    <h2 className="text-3xl font-bold text-gray-800">{data.institution.name}</h2>
-                    <p className="text-lg text-blue-600">{data.examName} - Grade Sheet</p>
-                </div>
-                <button
-                    className="p-3 bg-green-500 text-white rounded-full shadow-lg hover:bg-green-600 transition-colors flex items-center space-x-2"
-                    onClick={downloadFullExcel}
-                >
-                    <Download size={20} />
-                    <span>Download Marksheet (Excel)</span>
-                </button>
-            </div>
-
-            {/* Student Data Input & Import Section */}
-            <div className="bg-white p-4 rounded-xl shadow-lg mb-6">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-semibold text-gray-700">Student & Data Management</h3>
-                    <button
-                        className="py-2 px-4 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors flex items-center space-x-1"
-                        onClick={addStudent}
-                    >
-                        <User size={18} />
-                        <span>Add Student</span>
-                    </button>
-                </div>
-                <div className="flex space-x-4">
-                    <label className="flex-1 py-2 px-4 bg-gray-200 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-300 transition-colors flex items-center justify-center space-x-2 shadow-inner">
-                        <Upload size={18} />
-                        <span>Upload Marks (Excel)</span>
-                        <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleExcelUpload} />
-                    </label>
-                </div>
-            </div>
-
-            {/* Main Grade Sheet Table */}
-            <div className="overflow-x-auto bg-white rounded-xl shadow-lg">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-blue-600 text-white sticky top-0">
-                        <tr>
-                            <th className="py-3 px-3 text-center text-sm font-bold uppercase">Rank</th>
-                            <th className="py-3 px-3 text-left text-sm font-bold uppercase w-48">Student Name (ID: {userId.slice(0, 8)})</th>
-                            <th className="py-3 px-3 text-left text-sm font-bold uppercase">Stream</th>
-                            {data.subjects.map(subject => (
-                                <th key={subject.id} className="py-3 px-2 text-center text-sm font-bold uppercase min-w-[100px] whitespace-nowrap">
-                                    {subject.name} ({subject.maxMarks})
-                                </th>
-                            ))}
-                            <th className="py-3 px-3 text-center text-sm font-bold uppercase bg-gray-700">Total</th>
-                            <th className="py-3 px-3 text-center text-sm font-bold uppercase bg-gray-700">Percent</th>
-                            <th className="py-3 px-3 text-center text-sm font-bold uppercase">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                        {processedStudents.map(student => {
-                            const { rank, totalScore, totalMaxMarks, percentage } = student;
-                            const overallGrade = calculateGrade(totalScore, totalMaxMarks);
-                            return (
-                                <tr key={student.id} className="hover:bg-blue-50 transition-colors">
-                                    <td className="py-3 px-3 text-center font-bold text-lg text-blue-700">{rank}</td>
-                                    <td className="py-3 px-3 whitespace-nowrap">
-                                        <input
-                                            type="text"
-                                            value={student.name}
-                                            onChange={(e) => handleStudentDetailsChange(student.id, 'name', e.target.value)}
-                                            className="w-full p-1 border-b border-dashed focus:border-solid rounded-md bg-transparent"
-                                        />
-                                        <select
-                                            value={student.stream}
-                                            onChange={(e) => handleStudentDetailsChange(student.id, 'stream', e.target.value)}
-                                            className="mt-1 text-xs text-gray-500 bg-transparent border-0 focus:ring-0 p-0 w-full"
-                                        >
-                                            <option>Biology Science</option>
-                                            <option>Computer Science</option>
-                                            <option>Commerce</option>
-                                        </select>
-                                    </td>
-                                    <td className="py-3 px-3 text-left text-sm">{student.stream}</td>
-                                    {/* Subject Scores */}
-                                    {data.subjects.map(subject => {
-                                        const mark = student.marks[subject.id];
-                                        const score = mark?.score ?? '';
-                                        const gradeInfo = calculateGrade(score, subject.maxMarks);
-
-                                        return (
-                                            <td key={subject.id} className={`py-1 px-1 text-center font-medium ${gradeInfo.bg}`}>
-                                                <input
-                                                    type="number"
-                                                    value={score}
-                                                    onChange={(e) => handleMarkChange(student.id, subject.id, e.target.value)}
-                                                    className={`w-full p-1 text-center font-bold ${gradeInfo.color} bg-transparent border-b border-gray-300 focus:border-blue-500`}
-                                                    placeholder="-"
-                                                    min="0"
-                                                    max={subject.maxMarks}
-                                                />
-                                                <span className={`text-xs block ${gradeInfo.color}`}>{gradeInfo.grade}</span>
-
-                                                {/* Sub-Subjects Input (Simplified) */}
-                                                {subject.subSubjects.length > 0 && (
-                                                    <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                                                        {subject.subSubjects.map(subSub => (
-                                                            <input
-                                                                key={subSub.name}
-                                                                type="number"
-                                                                placeholder={subSub.name.slice(0, 4)}
-                                                                value={mark?.subScores[subSub.name] ?? ''}
-                                                                onChange={(e) => handleSubMarkChange(student.id, subject.id, subSub.name, e.target.value)}
-                                                                className="w-1/2 p-0.5 text-center border-b focus:border-blue-500 bg-gray-50"
-                                                                min="0"
-                                                                max={subSub.maxMarks}
-                                                            />
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </td>
-                                        );
-                                    })}
-                                    {/* Calculated Totals */}
-                                    <td className="py-3 px-3 text-center font-extrabold bg-gray-700 text-white">{totalScore}</td>
-                                    <td className={`py-3 px-3 text-center font-extrabold ${overallGrade.color} bg-gray-700 text-white`}>
-                                        {percentage}%
-                                    </td>
-                                    {/* Actions */}
-                                    <td className="py-3 px-3 flex flex-col space-y-1">
-                                        <button
-                                            className="text-xs py-1 px-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                                            onClick={() => downloadIndividualReportPDF(student)}
-                                        >
-                                            Report (PDF)
-                                        </button>
-                                        <label className="text-xs py-1 px-2 bg-gray-200 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-300 text-center">
-                                            Photo
-                                            <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadStudentPhoto(student.id, e.target.files[0])} />
-                                        </label>
-                                        <button
-                                            className="text-xs py-1 px-2 text-red-600 hover:bg-red-100 rounded-lg"
-                                            onClick={() => removeStudent(student.id)}
-                                        >
-                                            Remove
-                                        </button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </div>
-
-            <div className="mt-4 p-4 bg-yellow-100 border border-yellow-300 rounded-lg">
-                <p className="font-semibold text-yellow-800">Note on Excel Import:</p>
-                <p className="text-sm text-yellow-700">The Excel file must have a column named **'Name'** and optionally **'Stream'**. Subject scores are matched by subject name (e.g., a column named 'Mathematics' will map to the 'Mathematics' subject).</p>
-            </div>
+    <!-- Main App Container -->
+    <div id="app-container" class="min-h-screen flex hidden">
+        
+        <!-- Sidebar Menu -->
+        <div id="sidebar-menu" class="no-print w-full md:w-1/4 bg-gray-50 border-r border-gray-200 p-6 space-y-6">
+            <!-- Content dynamically injected by renderSidebar() -->
         </div>
-    );
 
-    // --- Main Layout ---
-    const studentForReport = processedStudents.find(s => s.id === selectedStudentId);
-
-    return (
-        <div className="min-h-screen bg-gray-100 font-sans">
-            {/* Header / Navigation */}
-            <header className="sticky top-0 z-10 bg-white shadow-lg p-4 flex justify-between items-center">
-                <div className="flex items-center space-x-4">
-                    <img src={data.institution.logoUrl} alt="Logo" className="w-8 h-8 rounded-full" />
-                    <h1 className="text-xl font-extrabold text-blue-800 hidden sm:block">Grade System</h1>
-                </div>
-                <nav className="flex space-x-4">
-                    <button
-                        className={`py-2 px-4 rounded-lg font-medium transition-colors flex items-center space-x-1 ${view === 'sheet' ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}
-                        onClick={() => setView('sheet')}
-                    >
-                        <Home size={18} /> <span>Mark Sheet</span>
-                    </button>
-                    <button
-                        className={`py-2 px-4 rounded-lg font-medium transition-colors flex items-center space-x-1 ${view === 'config' ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}
-                        onClick={() => setView('config')}
-                    >
-                        <Book size={18} /> <span>Configuration</span>
-                    </button>
-                </nav>
-            </header>
-
-            {/* Status Message */}
-            {message && (
-                <div className="p-3 text-center bg-green-200 text-green-800 font-semibold transition-opacity duration-500">
-                    {message}
-                </div>
-            )}
-
-            {/* Content Area */}
-            <main className="pb-12">
-                {view === 'sheet' && <MarkSheetView />}
-                {view === 'config' && <ConfigurationView />}
-            </main>
-
-            {/* Individual Report Modal (Rendered only when needed) */}
-            {(view === 'report' && selectedStudentId && studentForReport) && (
-                <ReportModal student={studentForReport} />
-            )}
-        </div>
-    );
-}
-
-
-
-
-
-
-
+        <!-- Main Content Area -->
+        <main id="main-content-area" class="flex-grow p-4 md:p-8 overflow-y-auto">
+            <div class="max-w-7xl mx-auto space-y-8">
+                <!-- Content dynamically injected by render() -->
+            </div>
+        </main>
+    </div>
+</body>
+</html>
