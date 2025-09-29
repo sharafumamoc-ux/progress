@@ -75,6 +75,16 @@
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
+        /** Utility: Converts a file object to a Base64 data URL */
+        const fileToBase64 = (file) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+        };
+
         /** Utility: Grade Calculation */
         const calculateGrade = (score, maxMark) => {
             if (maxMark === 0) return { grade: 'N/A', color: 'text-gray-400', bgColor: 'bg-gray-50', percentage: '0.00' };
@@ -476,7 +486,13 @@
                                     <option value="Biology Science">Biology Science</option>
                                     <option value="Commerce">Commerce</option>
                                 </select>
-                                <input type="url" id="student-photo-input" placeholder="Photo URL (Optional)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
+                                
+                                <!-- NEW: File Upload Input -->
+                                <label class="block text-sm font-medium text-gray-700 pt-2">Upload Photo (Optional, PNG/JPG)</label>
+                                <input type="file" id="student-photo-upload" accept="image/png, image/jpeg" class="w-full file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100"/>
+                                
+                                <input type="url" id="student-photo-url" placeholder="or paste Photo URL" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"/>
+                                
                                 <button id="btn-add-student" class="w-full py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-shadow shadow-md hover:shadow-lg">
                                     Add Student
                                 </button>
@@ -778,20 +794,34 @@
             // The onSnapshot listener will handle the rendering automatically
         };
 
-        const handleAddStudent = () => {
+        const handleAddStudent = async () => { // Function is now ASYNC
             const nameInput = document.getElementById('student-name-input');
             const streamSelect = document.getElementById('student-stream-input');
-            const photoInput = document.getElementById('student-photo-input');
+            const photoUrlInput = document.getElementById('student-photo-url'); // Input for URL
+            const photoFileInput = document.getElementById('student-photo-upload'); // Input for File
             
             const name = nameInput.value.trim();
             if (!name) return;
+
+            let photoData = photoUrlInput.value.trim();
+            const file = photoFileInput.files[0];
+
+            if (file) {
+                // If a file is selected, convert it to Base64 and use that data
+                try {
+                    photoData = await fileToBase64(file);
+                } catch (e) {
+                    console.error("Error converting file to Base64:", e);
+                    photoData = ''; // Fallback
+                }
+            }
+
 
             const newStudent = {
                 id: `s-${appState.data.nextStudentId}`,
                 name: name,
                 stream: streamSelect.value,
-                photoUrl: photoInput.value.trim(),
-                marks: {},
+                photoUrl: photoData, // Use converted Base64 data or provided URL
                 total: 0,
                 percentage: '0.00',
                 rank: appState.data.students.length + 1,
@@ -801,7 +831,8 @@
             saveData({ students: newStudents, nextStudentId: appState.data.nextStudentId + 1 });
             
             nameInput.value = '';
-            photoInput.value = '';
+            photoUrlInput.value = '';
+            photoFileInput.value = ''; // Clear file input after use
             // Re-render handled by saveData
         };
 
