@@ -125,7 +125,7 @@
             
             const calculatedStudents = students.map(student => {
                 
-                // 1. FILTER SUBJECTS relevant to the student's stream
+                // 1. FILTER SUBJECTS relevant to the student's stream (This is the stream combination logic)
                 const studentSubjects = subjects.filter(subject => 
                     !subject.streamFilter || subject.streamFilter === student.stream
                 );
@@ -1442,4 +1442,3 @@
     </div>
 </body>
 </html>
-
