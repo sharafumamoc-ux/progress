@@ -671,13 +671,24 @@
                     </div>
                 `).join('');
                 
+                // Max Mark Control
+                const maxMarkControl = s.isComposite ? 
+                    `<span class="text-sm font-semibold text-indigo-500">Total: ${s.maxMark}</span>` : 
+                    `<div class="flex items-center space-x-1">
+                        <label class="text-sm text-gray-500 whitespace-nowrap">Max Mark:</label>
+                        <input type="number" min="1" value="${s.maxMark}" data-subject-id="${s.id}" class="w-20 p-1 border border-gray-300 rounded-md text-center text-sm subject-max-mark-input"/>
+                    </div>`;
+
                 return `
                     <div class="p-4 border border-gray-200 rounded-lg shadow-sm">
                         <div class="flex justify-between items-center">
-                            <span class="text-lg font-semibold text-gray-800">${s.name} <span class="text-sm font-normal text-indigo-500">(/ ${s.maxMark})</span></span>
-                            <div class="space-x-2">
-                                <button data-subject-id="${s.id}" class="text-xs px-3 py-1 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition-colors add-subsubject-btn">+ Sub-subject</button>
-                                <button data-subject-id="${s.id}" class="text-xs px-3 py-1 bg-red-100 text-red-600 rounded-full hover:bg-red-200 transition-colors remove-subject-btn">Remove</button>
+                            <span class="text-lg font-semibold text-gray-800">${s.name}</span>
+                            <div class="flex items-center space-x-4">
+                                ${maxMarkControl}
+                                <div class="space-x-2">
+                                    <button data-subject-id="${s.id}" class="text-xs px-3 py-1 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition-colors add-subsubject-btn">+ Sub-subject</button>
+                                    <button data-subject-id="${s.id}" class="text-xs px-3 py-1 bg-red-100 text-red-600 rounded-full hover:bg-red-200 transition-colors remove-subject-btn">Remove</button>
+                                </div>
                             </div>
                         </div>
                         ${s.subSubjects.length > 0 ? `<div class="mt-3 border-t pt-3 space-y-2"><p class="text-sm font-medium text-gray-600">Sub-subjects (Total Max: ${s.maxMark})</p>${subSubjectList}</div>` : ''}
@@ -870,6 +881,21 @@
             nameInput.value = '';
             maxMarkInput.value = 100;
         };
+        
+        const handleSubjectMaxMarkChange = (e) => {
+            const subjectId = e.target.dataset.subjectId;
+            // Ensure max mark is at least 1
+            const newMaxMark = Math.max(1, parseInt(e.target.value) || 1); 
+
+            const updatedSubjects = appState.data.subjects.map(s => {
+                if (s.id === subjectId) {
+                    return { ...s, maxMark: newMaxMark };
+                }
+                return s;
+            });
+            saveData({ subjects: updatedSubjects });
+        };
+
 
         const handleRemoveSubject = (e) => {
             const idToRemove = e.target.dataset.subjectId;
@@ -1154,6 +1180,11 @@
             document.querySelectorAll('.remove-subject-btn').forEach(btn => btn.addEventListener('click', handleRemoveSubject));
             document.querySelectorAll('.add-subsubject-btn').forEach(btn => btn.addEventListener('click', handleAddSubSubject));
             document.querySelectorAll('.remove-subsubject-btn').forEach(btn => btn.addEventListener('click', handleRemoveSubSubject));
+            
+            // New: Max Mark Change Handler
+            document.querySelectorAll('.subject-max-mark-input').forEach(input => {
+                input.addEventListener('input', handleSubjectMaxMarkChange);
+            });
         };
 
         // --- INITIALIZATION ---
