@@ -76,8 +76,25 @@
         };
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- IMPORTANT: REPLACE THIS CONFIGURATION IF RUNNING OUTSIDE OF CANVAS ---
+        // You MUST replace the contents of this object with your actual Firebase Web App Configuration.
+        const USER_PROVIDED_FIREBASE_CONFIG = {
+            // apiKey: "YOUR_API_KEY",
+            // authDomain: "YOUR_AUTH_DOMAIN",
+            // projectId: "YOUR_PROJECT_ID", // REQUIRED for Firestore
+            // storageBucket: "YOUR_STORAGE_BUCKET",
+            // messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            // appId: "YOUR_APP_ID"
+        };
+        // -------------------------------------------------------------------------
+        
+        // Prioritize Canvas config, fall back to user config
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : (Object.keys(USER_PROVIDED_FIREBASE_CONFIG).length > 0 ? USER_PROVIDED_FIREBASE_CONFIG : {});
+
 
         /** Utility: Converts a file object to a Base64 data URL */
         const fileToBase64 = (file) => {
@@ -251,9 +268,10 @@
         /** Database: Initialize Firebase */
         const initializeFirebase = async () => {
             if (Object.keys(firebaseConfig).length === 0 || !firebaseConfig.projectId) {
-                console.error("Firebase config is missing or invalid. Data persistence disabled.");
+                console.error("Firebase config is missing or invalid. Data persistence disabled. Please update USER_PROVIDED_FIREBASE_CONFIG.");
                 appState.isAuthReady = true;
-                appState.userId = crypto.randomUUID(); // Fallback for local testing
+                // Use a stable, fallback ID for non-persistent mode, so at least data stays for the current session without refresh.
+                appState.userId = 'FALLBACK-NON-PERSISTENT-USER';
                 render();
                 return;
             }
@@ -283,7 +301,7 @@
             } catch (error) {
                 console.error("Firebase initialization failed:", error);
                 appState.isAuthReady = true;
-                appState.userId = crypto.randomUUID();
+                appState.userId = 'FALLBACK-NON-PERSISTENT-USER';
                 render();
             }
         };
@@ -1422,3 +1440,4 @@
     </div>
 </body>
 </html>
+
