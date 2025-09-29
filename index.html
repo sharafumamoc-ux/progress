@@ -515,6 +515,26 @@
                 <div class="space-y-8">
                     <h2 class="text-3xl font-extrabold text-gray-800">${appState.data.institution.examName} - Mark Sheet Entry</h2>
                     
+                    <!-- NEW: Data Persistence & Google Sheets Guide -->
+                    <div class="p-4 bg-indigo-50 border-l-4 border-indigo-600 text-indigo-800 rounded-lg shadow-md">
+                        <h3 class="font-bold text-lg mb-1 flex items-center">
+                            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l3 3a1 1 0 001.414-1.414L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                            Data Persistence & Google Sheets Guide
+                        </h3>
+                        <p class="text-sm">
+                            Your data is **automatically saved** and secured in a cloud database (**Firebase Firestore**) linked to your User ID. It will not be deleted unless you manually delete records.
+                        </p>
+                        <p class="text-sm mt-2 font-semibold">
+                            To use Google Sheets:
+                            <ol class="list-decimal list-inside ml-2 mt-1 space-y-0.5 text-gray-700">
+                                <li>**Export to Sheet:** Use the "Download CSV" button below.</li>
+                                <li>**Import to Google Sheets:** Open your Google Sheet, go to File > Import > Upload (your CSV file).</li>
+                                <li>**Import to App:** Edit your Sheet, then use File > Download > **Comma Separated Values (.csv)**. Upload that file using the Uploader below to update the app.</li>
+                            </ol>
+                        </p>
+                    </div>
+
+
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <!-- Add New Student -->
                         <div class="p-6 bg-white rounded-xl shadow-lg border border-gray-100">
